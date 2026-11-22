@@ -47,19 +47,27 @@ function broadcast(room) {
   room.game.version++;
   const state = room.game.serialize();
   const data = JSON.stringify({ type: 'state', state });
-  for (const ws of room.sockets) if (ws.readyState === 1) ws.send(data);
+  const sealed = state.auction && state.auction.sealed;
+  for (const ws of room.sockets) {
+    if (ws.readyState !== 1) continue;
+    // Sealed bids are private: each player is sent only their own bid.
+    ws.send(sealed ? JSON.stringify({ type: 'state', state: { ...state, auction: room.game.auctionView(ws.playerId) } }) : data);
+  }
   scheduleTick(room);
   scheduleBots(room);
 }
 
-// One bot action per tick: ask each bot in seat order, apply the first action anyone wants.
+// One bot action per tick: ask the bots in a random order (a fixed order would hand every tied
+// auction bid to the same seat), apply the first action anyone wants.
 function scheduleBots(room) {
   clearTimeout(room.botTimer);
   const g = room.game;
   if (g.status !== 'playing' || !g.players.some((p) => p.bot && !p.bankrupt)) return;
   room.botTimer = setTimeout(() => {
     room.botFails ||= {};
-    for (const p of g.players) {
+    const order = g.players.slice();
+    for (let k = order.length - 1; k > 0; k--) { const j = crypto.randomInt(k + 1); [order[k], order[j]] = [order[j], order[k]]; }
+    for (const p of order) {
       if (!p.bot || p.bankrupt) continue;
       let a = null;
       try { a = bot.decide(g, p.id); } catch (e) { console.error('bot decide error', e); }
@@ -75,7 +83,7 @@ function scheduleBots(room) {
       }
       return broadcast(room);
     }
-  }, g.auction ? BOT_DELAY + 250 : BOT_DELAY);
+  }, g.auction ? (g.auction.sealed ? Math.min(250, BOT_DELAY) : BOT_DELAY + 250) : BOT_DELAY);
 }
 
 function scheduleTick(room) {

@@ -15,12 +15,12 @@ const f2 = (x) => (Number.isFinite(x) ? x.toFixed(2) : String(x));
 // Runs X,X,Y,Y. With rotate=true, the same seed is also played as Y,Y,X,X and the two are averaged
 // (duplicate format: each side plays the other's dice). Returns per-unit gap stats where a unit is
 // one game (rotate=false) or one rotated pair (rotate=true); n80 is always reported in GAMES.
-async function duel(variant, x, y, N, { rotate = false, maxRounds = 100 } = {}) {
+async function duel(variant, x, y, N, { rotate = false, maxRounds = 100, botParams } = {}) {
   const jobs = [];
   for (let k = 0; k < N; k++) {
     const seed = 1 + k * 7919;
-    jobs.push({ variant, lineup: [x, x, y, y], seed, maxRounds, tag: `${seed}|a` });
-    if (rotate) jobs.push({ variant, lineup: [y, y, x, x], seed, maxRounds, tag: `${seed}|b` });
+    jobs.push({ variant, lineup: [x, x, y, y], seed, maxRounds, botParams, tag: `${seed}|a` });
+    if (rotate) jobs.push({ variant, lineup: [y, y, x, x], seed, maxRounds, botParams, tag: `${seed}|b` });
   }
   const R = await runJobs(jobs);
   const D = (r) => mean(r.players.filter((p) => p.agent === x).map((p) => p.share)) - mean(r.players.filter((p) => p.agent === y).map((p) => p.share));

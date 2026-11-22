@@ -12,6 +12,7 @@ function casual(g, pid) {
   const me = g.player(pid);
   if (g.auction && g.auction.active.includes(pid)) {
     const a = g.auction;
+    if (a.sealed) { const b = Math.min(g.price(a.space), me.cash - g.scale(250)); return b >= 1 ? { action: 'bid', amount: b } : { action: 'passAuction' }; }
     if (a.highBidder === pid) return null;
     const price = g.price(a.space); const next = a.highBid + Math.max(5, Math.round(price * 0.05));
     return next <= price && me.cash - next > g.scale(250) ? { action: 'bid', amount: next } : { action: 'passAuction' };
@@ -56,7 +57,9 @@ function makeRandom(seed = 1) {
   return function random(g, pid) {
     const me = g.player(pid);
     if (g.auction && g.auction.active.includes(pid)) {
-      const a = g.auction; if (a.highBidder === pid) return null;
+      const a = g.auction;
+      if (a.sealed) { const b = Math.floor(Math.min(me.cash - 50, g.price(a.space) * (0.3 + r()))); return r() < 0.6 && b >= 1 ? { action: 'bid', amount: b } : { action: 'passAuction' }; }
+      if (a.highBidder === pid) return null;
       const bid = a.highBid + 10;
       return r() < 0.5 && bid < me.cash - 50 ? { action: 'bid', amount: bid } : { action: 'passAuction' };
     }
@@ -119,6 +122,7 @@ const variants = {
     pre: (g, pid) => {
       const a = g.auction; if (!a || !a.active.includes(pid) || a.highBidder === pid) return null;
       const me = g.player(pid); const cap = Math.min(me.cash - 50, Math.round(g.price(a.space) * 1.6));
+      if (a.sealed) return cap >= 1 ? { action: 'bid', amount: cap } : { action: 'passAuction' };
       const next = a.highBid + Math.max(5, Math.round(g.price(a.space) * 0.05));
       return next <= cap ? { action: 'bid', amount: next } : { action: 'passAuction' };
     },

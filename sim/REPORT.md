@@ -1,8 +1,12 @@
 # Margin Call as a trading-skill test: simulation report
 
-About 250,000 full games, played headless by AI agents through the real rules engine (`game.apply`), at roughly
-20 ms per 4-player game. Rule variants are patches applied to a game instance, so `src/` is unchanged.
-To reproduce, see [Reproduce](#reproduce).
+About 300,000 full games, played headless by AI agents through the real rules engine (`game.apply`), at roughly
+20 ms per 4-player game. To reproduce, see [Reproduce](#reproduce).
+
+> **Status: implemented.** Sections 1–6 measure the game *before* the changes (commit `71c143d`), with rule
+> variants applied as patches. Section 7 measures the changes as they now exist in `src/`: the desk exploit
+> fixes (always on), the lobby options with the **Skill test** preset, and the re-tuned AI.
+> Re-running the section 1–6 scripts today measures the fixed engine and the new AI, so their numbers will differ.
 
 ## How skill was measured
 
@@ -178,6 +182,72 @@ seat bias is removed by rotation, the three exploits are gone, and leverage and 
 22–92 games. Negotiation and valuation still take a few hundred games, so for those use the longer `baseDup`
 drill or the 25-round draft drill.
 
+## 7. After implementation (measured on the shipped engine)
+
+What shipped:
+
+* **Desk fixes, always on.**
+  * Shares and options deal at the *worse* of the round mark and the live price. This kills stale-quote
+    arbitrage and keeps the old protection against intra-round pumping.
+  * No new CDS or puts on a player already below $0.
+  * The swap fixed leg is the expected policy path (curve minus term premium) ± 0.1%.
+  * Total swap notional is capped at the desk limit.
+* **Lobby options plus a Skill test preset:** opening draft, sealed second-price bids, seeded per-seat dice
+  (duplicate matches), money cards / jail / doubles off, risk-priced credit (1.5%/unit, re-priced each round),
+  neutral rate 8%, 40-round cap.
+* **Fairer bot polling.** The server polls bots in random order, so tied bids no longer go to a fixed seat.
+* **AI changes:**
+  * It no longer buys the leader's desk shares.
+  * It bids its valuation once in sealed auctions.
+  * In a draft it spends to a budget: ≤ 0.8× list, ≤ 1.6× for a set-completing or blocking lot, 15% of
+    starting cash kept back.
+  * These values came from `sim/tuneDraft.js`, tuned against a mixed field (casual, random, loose and tight
+    drafters).
+  * The scoreboard caught the AI's first draft logic overspending: a budget-keeping copy took a 37.8% share
+    against three standard copies.
+
+Skill detection, 300 games per cell (skill preset: seeds replayed with seats rotated):
+
+| skill test | classic (100 rds) | **skill preset (40 rds)** | before, base rules |
+|---|---|---|---|
+| Overall play (pro vs casual) | 70% / 22 games | **91% / 14 games** | 69% / 115 |
+| vs noise trader (pro vs random) | 96% / 2 | 91% / 6 | — |
+| Valuation (pro vs over-bidder) | 48% / — | **89% / 4** | 50% / — |
+| Draft budgeting (pro vs loose drafter) | n/a | **79% / 12** | n/a |
+| Negotiation (pro vs no-trade) | 61% / 98 | **61% / 54** | 58% / 171 |
+| Position sizing (pro vs reckless) | 48% / — | **58% / 190** | 38% / — (reckless wins) |
+| Using leverage (pro vs never-borrow) | 80% / 13 | 70% / 16 | 75% / 17 |
+| Stale-quote arbitrage | 37% / — (loses) | 11% / — (loses) | 68% / 37 |
+| Rates carry / credit-event | ~50% / — | ~50% / — | 61% / 307, 52% / 1957 |
+| Rounds per game | 83 | **39** | 78 |
+
+1-vs-3 scoreboard on the shipped engine (par 25% share):
+
+| agent | classic | skill preset |
+|---|---|---|
+| pro_reckless | 30.4% | 24.8% (busts 54%) |
+| pro_noDesk | 25.4% | 25.3% |
+| pro_overbid | 26.9% | 26.1% |
+| pro_sucker | 15.4% | 23.1% |
+| pro_noTrade | 13.0% | 16.1% |
+| pro_noLev | 7.8% | 15.5% |
+| pro_stale | 17.3% | 7.8% |
+| casual | 8.4% | 16.3% |
+| random | 2.1% | 11.8% |
+
+Reading the results:
+
+* **Exploits are gone.** Under both presets every exploit agent scores at par or loses.
+* **Desk use is now neutral.** Turning the desk off no longer helps the AI.
+* **The Skill test preset is fast and discriminating.** It plays in half the rounds, and overall skill, valuation,
+  budgeting, leverage and negotiation all show within 4–54 games.
+* **Reckless leverage is no longer dominant** (par, with a 54% bust rate). But sizing is still the slowest
+  skill to detect (190 games): the AI's own sizing is not much better than "borrow to the cap".
+* **Classic rules still reward max leverage** (`pro_reckless` 30%). This is by design: classic keeps cheap
+  credit. Use the preset to test sizing.
+* **Not yet testable: rates and credit forecasting.** The fixed desk leaves no free edge, and no forecasting
+  agent was built to look for a fair one.
+
 ## Caveats
 
 * The agents are rule-based heuristics, not LLM agents. "Skill detectable in N games" is measured *between
@@ -197,6 +267,10 @@ node sim/experiments.js caps 300       # game-length caps
 node sim/formats.js all                # exploits, duplicate, draft, scoreboard
 node sim/round2.js 250                 # tournament formats
 node sim/round2.js 300 tightRiskDupN7:40,tightRiskDupN9:40,tightRiskDupN9:25 final
+# after implementation (engine-native presets)
+node sim/round2.js 300 classic:100,skill:40 final_after
+node sim/tune.js 150 skill             # AI leverage parameters
+node sim/tuneDraft.js 120              # AI draft bidding
 ```
 
 JSON results are written to `sim/results/`.

@@ -44,7 +44,8 @@ npm test             # rules engine tests + randomised full-game fuzzing
   - **Floating:** policy rate + 0.25% + credit spread, reset every round.
   - **Fixed:** max(yield curve, floating base) + a lock-in premium (0.25% / 0.35% / 0.5% for 5 / 10 / 20 rounds) + credit spread. Locked for the term, and always more expensive than floating at signing.
 - **Yield curve.** `rate(term) = w·policy + (1−w)·(neutral + target inflation) + term premium`, where `w = 5/term`. Short money tracks the policy rate and long money is anchored, so the curve inverts when the bank is hiking.
-- **Credit spread.** +0.5% per unit of leverage (assets ÷ equity) after the new loan.
+- **Credit spread.** +0.5% per unit of leverage (assets ÷ equity) after the new loan. With **risk-priced credit**
+  (lobby option) it is +1.5% per unit and re-prices on all your bank debt every round (fixed loans lock only the base rate).
 - **Leverage cap.** Bank debt ≤ (cap − 1) × book equity. The host picks the cap in the lobby: 1× disables borrowing, 3× is the default.
 - **Margin call.** If losses push you over the cap you are flagged. Fix it before you end your turn, or the bank seizes cash, sells buildings and mortgages property until you are back under the cap.
 
@@ -77,13 +78,35 @@ Players can trade instruments with the central bank as counterparty (Bank Desk t
 
 | Product | How it works |
 |---|---|
-| Shares | Each player is split into 100 shares priced at book equity ÷ 100, re-marked at the start of every round. Buy at the mark + 3%, sell at the mark − 3%. Max 50 shares of one player. Worthless if they go bankrupt |
-| Call / put options | On a rival's shares, any strike, 5/10/20 rounds. Premium = Black-Scholes using that player's measured volatility, + 15%. Cash-settled any time; auto-exercised at expiry. A put pays the full strike if the player goes bankrupt |
-| Credit default swap | Pay a premium every round; the bank pays the notional if the named player goes bankrupt. Premium = notional × default risk × 1.3, where default risk comes from leverage, cash and the worst rent on the board |
+| Shares | Each player is split into 100 shares priced at book equity ÷ 100, re-marked at the start of every round. The desk deals at the **worse of the mark and the live price** for you: buy at the higher + 3%, sell at the lower − 3%. Max 50 shares of one player. Worthless if they go bankrupt |
+| Call / put options | On a rival's shares, any strike, 5/10/20 rounds. Premium = Black-Scholes using that player's measured volatility, + 15%. Cash-settled any time (at the worse of mark and live price); auto-exercised at expiry. A put pays the full strike if the player goes bankrupt. No new puts on a player already below $0 |
+| Credit default swap | Pay a premium every round; the bank pays the notional if the named player goes bankrupt. Premium = notional × default risk × 1.3, where default risk comes from leverage, cash and the worst rent on the board. Not sold on a player already below $0 |
 | Rent insurance | Pay a premium every round; the bank pays 80% of any single rent above your deductible ($100/$250/$500), up to $1,500. Priced from the rents on the board when you buy |
-| Rate swap | Pay fixed and receive the policy rate (or the reverse) on a notional, settled every round. Close early at mark-to-market − 1% |
+| Rate swap | Pay fixed and receive the policy rate (or the reverse) on a notional, settled every round. The fixed rate is the expected policy path (the curve without its term premium) ± 0.1%. Total swap notional is capped at your desk limit. Close early at mark-to-market − 1% |
 
-Desk positions count toward net worth but not toward your borrowing limit. Share prices are re-marked only once a round, so a single trade can't pump a price.
+Desk positions count toward net worth (at what closing them would pay now) but not toward your borrowing limit.
+Dealing at the worse of the once-a-round mark and the live price means neither stale prices (news the mark
+hasn't caught up with) nor an intra-round pump pays. Simulation showed both the stale mark and the old swap
+and CDS rules were free money (see `sim/REPORT.md`).
+
+## Skill-test mode
+
+The lobby has a **Rules preset** switch. **Classic** is the traditional game. **Skill test** changes the rules
+so that trading decisions, not dice, decide the game. Every option can also be set on its own:
+
+| Option | Skill test | What it does |
+|---|---|---|
+| Getting property | Opening draft | Every lot is auctioned before round 1, instead of buying what you land on |
+| Auction format | Sealed bid, second price | Everyone bids once in secret. The highest bid wins and pays the second-highest bid, so bid your true value; reaction speed doesn't matter |
+| Dice | Seeded per seat | Seat order is join order, and each seat has its own dice and card stream from the seed. Replay the seed with players rotated through the seats for a **duplicate match**: everyone faces the same luck |
+| Money cards, Lockup, doubles | Off | Pure noise: they add variance but no decisions. Macro-shock cards stay |
+| Credit pricing | Risk-priced | Steeper credit spread, re-priced every round, so leverage has a running cost |
+| Neutral real rate | 8%/round | Borrowing costs about what property earns, so there is a best amount to borrow |
+| Game length | 40 rounds | Then the highest net worth wins |
+
+In simulation (`sim/REPORT.md`) the Skill test preset plays in about 39 rounds and ~480 actions (classic: ~80
+rounds and ~900). Two AI players beat two casual players in 91% of games (classic: about 70%), and
+the gap shows in about 14 games instead of about 115.
 
 ## AI players
 
@@ -93,10 +116,14 @@ The host can add up to 7 AI players in the lobby. They act through the same rule
 - build where the return is best and borrow to build when that return beats the loan rate
 - hold at four houses when the bank runs short
 - bid to their valuation in auctions and haggle for set-completing trades
+- in sealed-bid auctions bid their valuation once; in an opening draft spend to a budget
+  (≤ 0.8× list, ≤ 1.6× for a set-completing or blocking lot, 15% of starting cash kept back)
 - price contracts by discounted cash flows and counterparty risk
 - buy rent insurance when the board turns dangerous
 
-In tests, two AI players beat two casual players in 23 of 24 four-player games.
+The AI's tunable parameters are in `bot.params` and were tuned with the simulator (`sim/tune.js`,
+`sim/tuneDraft.js`). Over 300 classic four-player games, two AI players beat two casual players about 3 times
+in 4. In the Skill test preset they win 91% of games.
 
 ## Player-to-player financial contracts
 

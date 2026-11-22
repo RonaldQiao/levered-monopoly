@@ -5,7 +5,7 @@ const path = require('node:path');
 const { duel } = require('./formats');
 
 const SK = [
-  ['overall', 'pro', 'casual'], ['valuation', 'pro_draft', 'pro_overbid'], ['draftBudget', 'pro_draft', 'pro'],
+  ['overall', 'pro', 'casual'], ['noise', 'pro', 'random'], ['valuation', 'pro', 'pro_overbid'], ['draftBudget', 'pro', 'pro_draftLoose'],
   ['negotiation', 'pro', 'pro_noTrade'], ['adverse', 'pro', 'pro_sucker'],
   ['sizing', 'pro', 'pro_reckless'], ['leverage', 'pro', 'pro_noLev'],
   ['credit', 'pro_distress', 'pro'], ['rates', 'pro_carry', 'pro'], ['stale', 'pro_stale', 'pro'],
@@ -14,7 +14,7 @@ const DEFAULT_FORMATS = [['base', 100, false], ['baseDup', 100, true], ['tightDu
 
 (async () => {
   const N = Number(process.argv[2]) || 250;
-  const FORMATS = process.argv[3] ? process.argv[3].split(',').map((f) => { const [v, cap] = f.split(':'); return [v, Number(cap) || 40, /Dup/.test(v)]; }) : DEFAULT_FORMATS;
+  const FORMATS = process.argv[3] ? process.argv[3].split(',').map((f) => { const [v, cap] = f.split(':'); return [v, Number(cap) || 40, /Dup|^skill/.test(v)]; }) : DEFAULT_FORMATS;
   const file = process.argv[4] || 'round2';
   const out = {};
   for (const [v, cap, rot] of FORMATS) {

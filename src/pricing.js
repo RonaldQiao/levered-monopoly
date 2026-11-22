@@ -52,5 +52,12 @@
   const shareAsk = (price, shares) => Math.ceil(price * shares * (1 + DESK.shareSpread));
   const shareBid = (price, shares) => Math.floor(price * shares * (1 - DESK.shareSpread));
 
-  return { DESK, normCdf, blackScholes, optionPremium, cdsPremium, shareAsk, shareBid };
+  // The desk deals at the WORSE of the round's mark and the live book-equity price for the customer.
+  // Neither stale news (live moved, mark hasn't) nor an intra-round pump (live pushed, then reversed) pays.
+  //   'ask': the higher price, used when the customer pays for upside (buying shares or a call, closing a put)
+  //   'bid': the lower price, used when the customer is paid for upside (selling shares, closing a call, buying a put)
+  const dealPrice = (mark, live, side) => (side === 'ask' ? Math.max(mark, live) : Math.min(mark, live));
+  const TERM_PREMIUM = { 5: 0.25, 10: 0.5, 20: 1.0 };
+
+  return { DESK, normCdf, blackScholes, optionPremium, cdsPremium, shareAsk, shareBid, dealPrice, TERM_PREMIUM };
 }));

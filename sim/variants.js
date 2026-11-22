@@ -213,3 +213,11 @@ for (const r of [3, 5, 7, 9]) {
   V[`neutral${r}`] = { pre: (g) => { g.settings.neutralRate = r; } };
   V[`tightRiskDupN${r}`] = compose(V[`neutral${r}`], V.dup, V.tight, V.riskPricedCredit);
 }
+
+// ---- engine-native settings (the rules are now implemented in src/engine.js) ---------------
+const { PRESETS } = require('../src/engine');
+const withSettings = (o) => ({ pre: (g) => Object.assign(g.settings, o) });
+V.classic = withSettings(PRESETS.classic);
+V.skill = withSettings(PRESETS.skill);
+for (const r of [3, 5, 6, 7, 8, 9]) V[`skillN${r}`] = withSettings({ ...PRESETS.skill, neutralRate: r });
+V.skillNoCap = withSettings({ ...PRESETS.skill, maxRounds: 0 });

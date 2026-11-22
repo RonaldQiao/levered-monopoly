@@ -81,6 +81,11 @@ function makeDrafter({ keyMult = 1.6, mult = 1.0, keep = 0.3 } = {}) {
   return (g, pid) => {
     const a = g.auction;
     if (!a || !a.active.includes(pid) || a.highBidder === pid || !(g.draftQueue && g.round === 1)) return null;
+    if (a.sealed) {
+      const me = g.player(pid); const price = g.price(a.space); const key = bot.worth(g, pid, a.space) >= 1.8 * price;
+      const cap = Math.floor(Math.min(price * (key ? keyMult : mult), me.cash - keep * g.settings.startingCash));
+      return cap >= 1 ? { action: 'bid', amount: cap } : { action: 'passAuction' };
+    }
     const me = g.player(pid); const i = a.space; const price = g.price(i);
     const w = bot.worth(g, pid, i);
     const key = w >= 1.8 * price;

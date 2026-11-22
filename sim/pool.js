@@ -11,7 +11,9 @@ if (!isMainThread) {
   const agents = { ...variants, ...extra };
   parentPort.on('message', (jobs) => {
     const out = [];
+    const botParams = { ...require('../src/bot').params };
     for (const j of jobs) {
+      Object.assign(require('../src/bot').params, botParams, j.botParams || {});
       const r = runGame({
         seed: j.seed, maxRounds: j.maxRounds, settings: j.settings, variant: V[j.variant],
         agents: j.lineup.map((n) => { if (!agents[n]) throw new Error(`unknown agent ${n}`); return { name: n, decide: agents[n] }; }),
