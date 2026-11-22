@@ -804,7 +804,8 @@ class Game {
   }
 
   checkTradeSide(p, side) {
-    if (side.cash > p.cash) fail(`${p.name} does not have $${side.cash}`);
+    // Only cash actually being handed over has to be on hand: a player below $0 may still trade property away.
+    if (side.cash > 0 && side.cash > p.cash) fail(`${p.name} does not have $${side.cash}`);
     if (side.jailCards > p.jailCards.length) fail(`${p.name} lacks that many get-out-of-Lockup cards`);
     for (const i of side.spaces) {
       if (!this.props[i] || this.props[i].owner !== p.id) fail(`${p.name} does not own ${SPACES[i]?.name || i}`);

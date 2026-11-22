@@ -176,6 +176,19 @@ test('economy: hot economy raises inflation and the policy rate', () => {
   assert.strictEqual(g.econ.fiscal, 'stimulus');
 });
 
+test('a player with negative cash can sell property in a trade but cannot pay cash', () => {
+  const g = newGame(2);
+  const [a, b] = g.players;
+  g.props[39].owner = a.id;
+  a.cash = -200;
+  g.proposeTrade(a, { to: b.id, give: { spaces: [39] }, get: { cash: 450 } });
+  g.respondTrade(b, g.trades[0].id, true);
+  assert.strictEqual(g.props[39].owner, b.id);
+  assert.strictEqual(a.cash, 250);
+  a.cash = -10;
+  assert.throws(() => g.proposeTrade(a, { to: b.id, give: { cash: 5 }, get: { spaces: [39] } }), /does not have/);
+});
+
 test('three doubles sends you to lockup', () => {
   const g = newGame(2);
   g.rng = () => 0; // always rolls 1+1
