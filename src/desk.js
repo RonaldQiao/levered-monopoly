@@ -14,6 +14,8 @@ module.exports = function installDesk(Game, { fail, toInt, toNum, clamp, round2 
     },
 
     // ---------------------------------------------------------------- marks & risk
+    // The price every desk trade, payout and valuation uses: fixed once per round (bankrupt = 0).
+    markPrice(pid) { return this.player(pid).bankrupt ? 0 : (this.desk.marks[pid] ? this.desk.marks[pid].price : 0); },
     livePrice(pid) {
       const p = this.player(pid);
       return p.bankrupt ? 0 : Math.max(0, this.bookEquity(p)) / DESK.sharesOutstanding;
@@ -115,6 +117,8 @@ module.exports = function installDesk(Game, { fail, toInt, toNum, clamp, round2 
         if (n < 1 || n > DESK.maxSharesPerName) fail(`1 to ${DESK.maxSharesPerName} shares per option`);
         const K = round2(Math.max(0, toNum(o.strike, 'strike')));
         const m = this.desk.marks[r.id];
+        // Black-Scholes has no answer at a $0 price (a put would cost more than it can pay, a call next to nothing).
+        if (m.price <= 0) fail(`${r.name}'s shares are marked at $0 — no options until they recover`);
         const premium = optionPremium(product, m.price, K, t, this.econ.policyRate, m.vol, n);
         if (p.cash < premium) fail(`Need $${premium} premium`);
         this.deskPay(p.id, null, premium, `${product} on ${n} ${r.name} shares, strike $${K}`);
@@ -198,7 +202,7 @@ module.exports = function installDesk(Game, { fail, toInt, toNum, clamp, round2 
           const net = Math.round((x.notional * (this.econ.policyRate - x.fixed) * (x.side === 'payFixed' ? 1 : -1)) / 100);
           if (net > 0) this.deskPay(null, h.id, net, 'swap settlement'); else if (net < 0) this.deskPay(h.id, null, -net, 'swap settlement');
         } else if ((x.type === 'call' || x.type === 'put') && expired) {
-          const pay = this.optionPayoff(x, this.livePrice(x.ref));
+          const pay = this.optionPayoff(x, this.markPrice(x.ref));
           if (pay > 0) this.deskPay(null, h.id, pay, `${x.type} auto-exercised at expiry`);
         }
         if (expired) this.desk.positions = this.desk.positions.filter((y) => y !== x);
@@ -227,8 +231,9 @@ module.exports = function installDesk(Game, { fail, toInt, toNum, clamp, round2 
       let v = 0;
       for (const x of this.desk.positions) {
         if (x.holder !== p.id) continue;
-        if (x.type === 'shares') v += shareBid(this.livePrice(x.ref), x.shares);
-        else if (x.type === 'call' || x.type === 'put') v += this.optionPayoff(x, this.livePrice(x.ref));
+        // Valued at the same round mark the desk would pay out at, so net worth matches what closing returns.
+        if (x.type === 'shares') v += shareBid(this.markPrice(x.ref), x.shares);
+        else if (x.type === 'call' || x.type === 'put') v += this.optionPayoff(x, this.markPrice(x.ref));
         else if (x.type === 'swap') v += this.swapMtm(x);
       }
       return v;

@@ -133,6 +133,27 @@ test('bank desk: shares, options, CDS, insurance and swaps settle correctly', ()
   assert.strictEqual(a.cash - s0, 20);
 });
 
+test('bank-desk puts stay consistent when the share price falls to $0', () => {
+  const { g } = newGame(9, ['A', 'B', 'C']);
+  const [a, b] = g.players;
+  g.deskBuy(a, { product: 'put', ref: b.id, shares: 10, strike: 10, term: 5 });
+  const put = g.desk.positions[0];
+  // Mid-round crash: net worth and a close both use the round mark, so they agree (no free value, no lost value).
+  b.cash = -100;
+  assert.strictEqual(g.deskValue(a), g.optionPayoff(put, g.desk.marks[b.id].price));
+  // At the next re-mark the put is worth the full strike and pays it.
+  g.markEquity();
+  assert.strictEqual(g.desk.marks[b.id].price, 0);
+  assert.strictEqual(g.deskValue(a), 100);
+  // Expiry settles at the fresh mark.
+  g.round = put.expiry; const c0 = a.cash; g.settleDesk();
+  assert.strictEqual(a.cash - c0, 100);
+  assert.strictEqual(g.desk.positions.length, 0);
+  // No new options on a player marked at $0.
+  assert.throws(() => g.deskBuy(a, { product: 'call', ref: b.id, shares: 50, strike: 0, term: 20 }), /marked at \$0/);
+  assert.throws(() => g.deskBuy(a, { product: 'put', ref: b.id, shares: 10, strike: 10, term: 5 }), /marked at \$0/);
+});
+
 test('fixed-rate loans always cost more than floating at signing', () => {
   const { g } = newGame(3, ['A', 'B']);
   const a = g.players[0];

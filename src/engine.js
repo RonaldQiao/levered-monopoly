@@ -636,8 +636,8 @@ class Game {
       }
     }
     this.settleContracts();
+    this.markEquity(); // re-mark first so expiring desk options settle at this round's price
     this.settleDesk();
-    this.markEquity();
   }
 
   borrow(p, amount, term, kind = 'fixed') {
