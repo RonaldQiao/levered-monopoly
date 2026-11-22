@@ -1,0 +1,1416 @@
+{
+ "N": 400,
+ "maxRounds": 100,
+ "variants": [
+  "base",
+  "noCards",
+  "noMacroCards",
+  "noJail",
+  "noDoubles",
+  "lowVarDice",
+  "noAuction",
+  "lev1",
+  "lev5",
+  "cash3000",
+  "baseFix",
+  "draft",
+  "smoothRent",
+  "proposed",
+  "proposedFix"
+ ],
+ "skills": [
+  {
+   "key": "overall",
+   "label": "Overall play (pro vs casual)",
+   "x": "pro",
+   "y": "casual"
+  },
+  {
+   "key": "valuation",
+   "label": "Valuation (pro vs over-bidder)",
+   "x": "pro",
+   "y": "pro_overbid"
+  },
+  {
+   "key": "negotiation",
+   "label": "Negotiation (pro vs no-trade)",
+   "x": "pro",
+   "y": "pro_noTrade"
+  },
+  {
+   "key": "adverse",
+   "label": "Adverse selection (pro vs accepts-all)",
+   "x": "pro",
+   "y": "pro_sucker"
+  },
+  {
+   "key": "sizing",
+   "label": "Position sizing (pro vs reckless leverage)",
+   "x": "pro",
+   "y": "pro_reckless"
+  },
+  {
+   "key": "leverage",
+   "label": "Using leverage (pro vs never-borrow)",
+   "x": "pro",
+   "y": "pro_noLev"
+  },
+  {
+   "key": "credit",
+   "label": "Credit-event trading (distress vs pro)",
+   "x": "pro_distress",
+   "y": "pro"
+  },
+  {
+   "key": "rates",
+   "label": "Rates carry (carry vs pro)",
+   "x": "pro_carry",
+   "y": "pro"
+  },
+  {
+   "key": "stale",
+   "label": "Stale-quote arbitrage (stale vs pro)",
+   "x": "pro_stale",
+   "y": "pro"
+  }
+ ],
+ "cells": {
+  "base|overall": {
+   "n": 400,
+   "meanGap": 0.07619950523136666,
+   "d": 0.26225587495680275,
+   "n80": 115,
+   "xWinRate": 0.6875,
+   "xWinBase": 0.5,
+   "rounds": 91.375
+  },
+  "base|valuation": {
+   "n": 400,
+   "meanGap": 0.0013254351125860562,
+   "d": 0.0029687139002433846,
+   "n80": 890704,
+   "xWinRate": 0.5,
+   "xWinBase": 0.5,
+   "rounds": 78.0475
+  },
+  "base|negotiation": {
+   "n": 400,
+   "meanGap": 0.0761309519091703,
+   "d": 0.21477400107429717,
+   "n80": 171,
+   "xWinRate": 0.5775,
+   "xWinBase": 0.5,
+   "rounds": 88.0425
+  },
+  "base|adverse": {
+   "n": 400,
+   "meanGap": 0.036883516295952185,
+   "d": 0.07730589318355295,
+   "n80": 1314,
+   "xWinRate": 0.5325,
+   "xWinBase": 0.5,
+   "rounds": 69.2375
+  },
+  "base|sizing": {
+   "n": 400,
+   "meanGap": -0.11644354833482769,
+   "d": -0.25800716623758385,
+   "n80": null,
+   "xWinRate": 0.3775,
+   "xWinBase": 0.5,
+   "rounds": 64.035
+  },
+  "base|leverage": {
+   "n": 400,
+   "meanGap": 0.2611843777330516,
+   "d": 0.6813671928079126,
+   "n80": 17,
+   "xWinRate": 0.75,
+   "xWinBase": 0.5,
+   "rounds": 68.0475
+  },
+  "base|credit": {
+   "n": 400,
+   "meanGap": 0.028129841087041287,
+   "d": 0.06333920221941418,
+   "n80": 1957,
+   "xWinRate": 0.52,
+   "xWinBase": 0.5,
+   "rounds": 80.3775
+  },
+  "base|rates": {
+   "n": 400,
+   "meanGap": 0.0732456270445878,
+   "d": 0.16004325823493262,
+   "n80": 307,
+   "xWinRate": 0.605,
+   "xWinBase": 0.5,
+   "rounds": 76.355
+  },
+  "base|stale": {
+   "n": 400,
+   "meanGap": 0.18122253852721587,
+   "d": 0.4652849517155405,
+   "n80": 37,
+   "xWinRate": 0.68,
+   "xWinBase": 0.5,
+   "rounds": 82.2275
+  },
+  "noCards|overall": {
+   "n": 400,
+   "meanGap": 0.062378978385226345,
+   "d": 0.21593838301789542,
+   "n80": 169,
+   "xWinRate": 0.67,
+   "xWinBase": 0.5,
+   "rounds": 91.83
+  },
+  "noCards|valuation": {
+   "n": 400,
+   "meanGap": -0.021428411595209428,
+   "d": -0.04772813177558258,
+   "n80": null,
+   "xWinRate": 0.4725,
+   "xWinBase": 0.5,
+   "rounds": 76.64
+  },
+  "noCards|negotiation": {
+   "n": 400,
+   "meanGap": 0.056988864812149306,
+   "d": 0.15918911569729544,
+   "n80": 310,
+   "xWinRate": 0.5875,
+   "xWinBase": 0.5,
+   "rounds": 86.6425
+  },
+  "noCards|adverse": {
+   "n": 400,
+   "meanGap": 0.060017736331701974,
+   "d": 0.12734650964600014,
+   "n80": 485,
+   "xWinRate": 0.5675,
+   "xWinBase": 0.5,
+   "rounds": 71.605
+  },
+  "noCards|sizing": {
+   "n": 400,
+   "meanGap": -0.10166085191485928,
+   "d": -0.2198587817351494,
+   "n80": null,
+   "xWinRate": 0.4,
+   "xWinBase": 0.5,
+   "rounds": 61.59
+  },
+  "noCards|leverage": {
+   "n": 400,
+   "meanGap": 0.2620925337982434,
+   "d": 0.6867701421086205,
+   "n80": 17,
+   "xWinRate": 0.75,
+   "xWinBase": 0.5,
+   "rounds": 68.725
+  },
+  "noCards|credit": {
+   "n": 400,
+   "meanGap": -0.0003737569969349619,
+   "d": -0.0008242928281116024,
+   "n80": null,
+   "xWinRate": 0.4925,
+   "xWinBase": 0.5,
+   "rounds": 78.085
+  },
+  "noCards|rates": {
+   "n": 400,
+   "meanGap": 0.07330464797123136,
+   "d": 0.15751890697919074,
+   "n80": 317,
+   "xWinRate": 0.5925,
+   "xWinBase": 0.5,
+   "rounds": 76.74
+  },
+  "noCards|stale": {
+   "n": 400,
+   "meanGap": 0.1599375111965529,
+   "d": 0.40115684271460356,
+   "n80": 49,
+   "xWinRate": 0.66,
+   "xWinBase": 0.5,
+   "rounds": 80.8575
+  },
+  "noMacroCards|overall": {
+   "n": 400,
+   "meanGap": 0.07599702104331099,
+   "d": 0.2660636625363825,
+   "n80": 111,
+   "xWinRate": 0.66,
+   "xWinBase": 0.5,
+   "rounds": 91.6275
+  },
+  "noMacroCards|valuation": {
+   "n": 400,
+   "meanGap": -0.004078862894901898,
+   "d": -0.009090070300153533,
+   "n80": null,
+   "xWinRate": 0.4975,
+   "xWinBase": 0.5,
+   "rounds": 76.8225
+  },
+  "noMacroCards|negotiation": {
+   "n": 400,
+   "meanGap": 0.0818143509755966,
+   "d": 0.2303546322571497,
+   "n80": 148,
+   "xWinRate": 0.5875,
+   "xWinBase": 0.5,
+   "rounds": 87.3375
+  },
+  "noMacroCards|adverse": {
+   "n": 400,
+   "meanGap": 0.0918617030597634,
+   "d": 0.19534650936078726,
+   "n80": 206,
+   "xWinRate": 0.59,
+   "xWinBase": 0.5,
+   "rounds": 69.3225
+  },
+  "noMacroCards|sizing": {
+   "n": 400,
+   "meanGap": -0.10087325220064454,
+   "d": -0.22124713417929842,
+   "n80": null,
+   "xWinRate": 0.39,
+   "xWinBase": 0.5,
+   "rounds": 63.325
+  },
+  "noMacroCards|leverage": {
+   "n": 400,
+   "meanGap": 0.243158272904524,
+   "d": 0.5990015900520325,
+   "n80": 22,
+   "xWinRate": 0.7375,
+   "xWinBase": 0.5,
+   "rounds": 67.4875
+  },
+  "noMacroCards|credit": {
+   "n": 400,
+   "meanGap": 0.0360195252793822,
+   "d": 0.07999646263827377,
+   "n80": 1227,
+   "xWinRate": 0.54,
+   "xWinBase": 0.5,
+   "rounds": 78.785
+  },
+  "noMacroCards|rates": {
+   "n": 400,
+   "meanGap": 0.0782839975810515,
+   "d": 0.17081735512138768,
+   "n80": 270,
+   "xWinRate": 0.6175,
+   "xWinBase": 0.5,
+   "rounds": 74.67
+  },
+  "noMacroCards|stale": {
+   "n": 400,
+   "meanGap": 0.1699697012609844,
+   "d": 0.4290479527809898,
+   "n80": 43,
+   "xWinRate": 0.6925,
+   "xWinBase": 0.5,
+   "rounds": 80.455
+  },
+  "noJail|overall": {
+   "n": 400,
+   "meanGap": 0.07369317227275482,
+   "d": 0.2517769318678267,
+   "n80": 124,
+   "xWinRate": 0.7075,
+   "xWinBase": 0.5,
+   "rounds": 91.5725
+  },
+  "noJail|valuation": {
+   "n": 400,
+   "meanGap": 0.02805435117789912,
+   "d": 0.0638111324594708,
+   "n80": 1928,
+   "xWinRate": 0.54,
+   "xWinBase": 0.5,
+   "rounds": 78.8025
+  },
+  "noJail|negotiation": {
+   "n": 400,
+   "meanGap": 0.06877024805121923,
+   "d": 0.19797013634250513,
+   "n80": 201,
+   "xWinRate": 0.5675,
+   "xWinBase": 0.5,
+   "rounds": 88.1775
+  },
+  "noJail|adverse": {
+   "n": 400,
+   "meanGap": 0.052633317881855296,
+   "d": 0.11112450637161064,
+   "n80": 636,
+   "xWinRate": 0.5575,
+   "xWinBase": 0.5,
+   "rounds": 70.87
+  },
+  "noJail|sizing": {
+   "n": 400,
+   "meanGap": -0.09689185787602103,
+   "d": -0.212312814024704,
+   "n80": null,
+   "xWinRate": 0.4075,
+   "xWinBase": 0.5,
+   "rounds": 64.8075
+  },
+  "noJail|leverage": {
+   "n": 400,
+   "meanGap": 0.23264436344330747,
+   "d": 0.5744492644733198,
+   "n80": 24,
+   "xWinRate": 0.7175,
+   "xWinBase": 0.5,
+   "rounds": 68.56
+  },
+  "noJail|credit": {
+   "n": 400,
+   "meanGap": 0.013417160983760128,
+   "d": 0.03077638007750244,
+   "n80": 8288,
+   "xWinRate": 0.5175,
+   "xWinBase": 0.5,
+   "rounds": 80.785
+  },
+  "noJail|rates": {
+   "n": 400,
+   "meanGap": 0.12087430595918981,
+   "d": 0.27394329879462387,
+   "n80": 105,
+   "xWinRate": 0.6625,
+   "xWinBase": 0.5,
+   "rounds": 76.215
+  },
+  "noJail|stale": {
+   "n": 400,
+   "meanGap": 0.17458313616555382,
+   "d": 0.43373484087011244,
+   "n80": 42,
+   "xWinRate": 0.6775,
+   "xWinBase": 0.5,
+   "rounds": 81.505
+  },
+  "noDoubles|overall": {
+   "n": 400,
+   "meanGap": 0.05912875607361045,
+   "d": 0.23853809299632747,
+   "n80": 138,
+   "xWinRate": 0.6775,
+   "xWinBase": 0.5,
+   "rounds": 95.1425
+  },
+  "noDoubles|valuation": {
+   "n": 400,
+   "meanGap": -0.005008705188001165,
+   "d": -0.011403480738693616,
+   "n80": null,
+   "xWinRate": 0.49,
+   "xWinBase": 0.5,
+   "rounds": 80.93
+  },
+  "noDoubles|negotiation": {
+   "n": 400,
+   "meanGap": 0.023616394165397913,
+   "d": 0.07048825473433884,
+   "n80": 1580,
+   "xWinRate": 0.54,
+   "xWinBase": 0.5,
+   "rounds": 90.48
+  },
+  "noDoubles|adverse": {
+   "n": 400,
+   "meanGap": 0.07126728691196355,
+   "d": 0.1531166374216363,
+   "n80": 335,
+   "xWinRate": 0.575,
+   "xWinBase": 0.5,
+   "rounds": 75.925
+  },
+  "noDoubles|sizing": {
+   "n": 400,
+   "meanGap": -0.06760133443109276,
+   "d": -0.1458530901492835,
+   "n80": null,
+   "xWinRate": 0.4375,
+   "xWinBase": 0.5,
+   "rounds": 66.835
+  },
+  "noDoubles|leverage": {
+   "n": 400,
+   "meanGap": 0.2630131389201162,
+   "d": 0.7162229262300082,
+   "n80": 16,
+   "xWinRate": 0.7475,
+   "xWinBase": 0.5,
+   "rounds": 76.495
+  },
+  "noDoubles|credit": {
+   "n": 400,
+   "meanGap": 0.021587084305977965,
+   "d": 0.0507148919825505,
+   "n80": 3053,
+   "xWinRate": 0.5125,
+   "xWinBase": 0.5,
+   "rounds": 83.065
+  },
+  "noDoubles|rates": {
+   "n": 400,
+   "meanGap": 0.0723364116827502,
+   "d": 0.15743505365006527,
+   "n80": 317,
+   "xWinRate": 0.6075,
+   "xWinBase": 0.5,
+   "rounds": 80.6225
+  },
+  "noDoubles|stale": {
+   "n": 400,
+   "meanGap": 0.1697492902613365,
+   "d": 0.4410504348198813,
+   "n80": 41,
+   "xWinRate": 0.6825,
+   "xWinBase": 0.5,
+   "rounds": 85.195
+  },
+  "lowVarDice|overall": {
+   "n": 400,
+   "meanGap": 0.07065809682267815,
+   "d": 0.2478976319963848,
+   "n80": 128,
+   "xWinRate": 0.6825,
+   "xWinBase": 0.5,
+   "rounds": 92.2675
+  },
+  "lowVarDice|valuation": {
+   "n": 400,
+   "meanGap": -0.05108450798742055,
+   "d": -0.11957013894899242,
+   "n80": null,
+   "xWinRate": 0.445,
+   "xWinBase": 0.5,
+   "rounds": 79.2575
+  },
+  "lowVarDice|negotiation": {
+   "n": 400,
+   "meanGap": 0.0505933226782943,
+   "d": 0.14875762066571457,
+   "n80": 355,
+   "xWinRate": 0.55,
+   "xWinBase": 0.5,
+   "rounds": 89.84
+  },
+  "lowVarDice|adverse": {
+   "n": 400,
+   "meanGap": 0.05733167170022134,
+   "d": 0.12146368127531287,
+   "n80": 533,
+   "xWinRate": 0.56,
+   "xWinBase": 0.5,
+   "rounds": 72.1725
+  },
+  "lowVarDice|sizing": {
+   "n": 400,
+   "meanGap": -0.08756833060691688,
+   "d": -0.19349192392804782,
+   "n80": null,
+   "xWinRate": 0.4075,
+   "xWinBase": 0.5,
+   "rounds": 64.4775
+  },
+  "lowVarDice|leverage": {
+   "n": 400,
+   "meanGap": 0.20898041168945297,
+   "d": 0.5158892989124435,
+   "n80": 30,
+   "xWinRate": 0.7025,
+   "xWinBase": 0.5,
+   "rounds": 72.6825
+  },
+  "lowVarDice|credit": {
+   "n": 400,
+   "meanGap": 0.04566234216183445,
+   "d": 0.10719657192528016,
+   "n80": 684,
+   "xWinRate": 0.55,
+   "xWinBase": 0.5,
+   "rounds": 81.84
+  },
+  "lowVarDice|rates": {
+   "n": 400,
+   "meanGap": 0.05622768120437031,
+   "d": 0.12091316472486267,
+   "n80": 537,
+   "xWinRate": 0.59,
+   "xWinBase": 0.5,
+   "rounds": 76.2125
+  },
+  "lowVarDice|stale": {
+   "n": 400,
+   "meanGap": 0.17262920040432722,
+   "d": 0.4442814892402598,
+   "n80": 40,
+   "xWinRate": 0.67,
+   "xWinBase": 0.5,
+   "rounds": 83.2525
+  },
+  "noAuction|overall": {
+   "n": 400,
+   "meanGap": 0.06885963201424007,
+   "d": 0.2418013268752065,
+   "n80": 135,
+   "xWinRate": 0.69,
+   "xWinBase": 0.5,
+   "rounds": 92.86
+  },
+  "noAuction|valuation": {
+   "n": 400,
+   "meanGap": 0.0097944115277436,
+   "d": 0.0234574330648807,
+   "n80": 14267,
+   "xWinRate": 0.505,
+   "xWinBase": 0.5,
+   "rounds": 87.325
+  },
+  "noAuction|negotiation": {
+   "n": 400,
+   "meanGap": 0.08974404022477085,
+   "d": 0.2898821834980314,
+   "n80": 94,
+   "xWinRate": 0.615,
+   "xWinBase": 0.5,
+   "rounds": 93.6875
+  },
+  "noAuction|adverse": {
+   "n": 400,
+   "meanGap": 0.10716580769717247,
+   "d": 0.2391032634341365,
+   "n80": 138,
+   "xWinRate": 0.6225,
+   "xWinBase": 0.5,
+   "rounds": 81.51
+  },
+  "noAuction|sizing": {
+   "n": 400,
+   "meanGap": -0.04186694233992971,
+   "d": -0.09711080383414904,
+   "n80": null,
+   "xWinRate": 0.455,
+   "xWinBase": 0.5,
+   "rounds": 80.3775
+  },
+  "noAuction|leverage": {
+   "n": 400,
+   "meanGap": 0.1706564256116993,
+   "d": 0.4372370374135886,
+   "n80": 42,
+   "xWinRate": 0.6475,
+   "xWinBase": 0.5,
+   "rounds": 84.0675
+  },
+  "noAuction|credit": {
+   "n": 400,
+   "meanGap": 0.026886768061283255,
+   "d": 0.06585287905604363,
+   "n80": 1811,
+   "xWinRate": 0.5175,
+   "xWinBase": 0.5,
+   "rounds": 89.7
+  },
+  "noAuction|rates": {
+   "n": 400,
+   "meanGap": 0.18584797941062714,
+   "d": 0.45733393393873883,
+   "n80": 38,
+   "xWinRate": 0.73,
+   "xWinBase": 0.5,
+   "rounds": 87.525
+  },
+  "noAuction|stale": {
+   "n": 400,
+   "meanGap": 0.17426734674937627,
+   "d": 0.48066647538195945,
+   "n80": 34,
+   "xWinRate": 0.6975,
+   "xWinBase": 0.5,
+   "rounds": 89.7575
+  },
+  "lev1|overall": {
+   "n": 400,
+   "meanGap": 0.00754288042667421,
+   "d": 0.025357351247923817,
+   "n80": 12209,
+   "xWinRate": 0.62,
+   "xWinBase": 0.5,
+   "rounds": 92.65
+  },
+  "lev1|valuation": {
+   "n": 400,
+   "meanGap": 0.04878547185365861,
+   "d": 0.11429704669862159,
+   "n80": 601,
+   "xWinRate": 0.555,
+   "xWinBase": 0.5,
+   "rounds": 83.3075
+  },
+  "lev1|negotiation": {
+   "n": 400,
+   "meanGap": 0.0722709899841246,
+   "d": 0.22467769480385966,
+   "n80": 156,
+   "xWinRate": 0.585,
+   "xWinBase": 0.5,
+   "rounds": 92.125
+  },
+  "lev1|adverse": {
+   "n": 400,
+   "meanGap": 0.026183278837140493,
+   "d": 0.05647084943452624,
+   "n80": 2462,
+   "xWinRate": 0.5325,
+   "xWinBase": 0.5,
+   "rounds": 74.7875
+  },
+  "lev1|sizing": {
+   "n": 400,
+   "meanGap": -0.011023705082418699,
+   "d": -0.025510471808910654,
+   "n80": null,
+   "xWinRate": 0.49,
+   "xWinBase": 0.5,
+   "rounds": 81.06
+  },
+  "lev1|leverage": {
+   "n": 400,
+   "meanGap": -0.011023705082418699,
+   "d": -0.025510471808910654,
+   "n80": null,
+   "xWinRate": 0.49,
+   "xWinBase": 0.5,
+   "rounds": 81.06
+  },
+  "lev1|credit": {
+   "n": 400,
+   "meanGap": 0.02100602151746018,
+   "d": 0.05169337862020871,
+   "n80": 2938,
+   "xWinRate": 0.53,
+   "xWinBase": 0.5,
+   "rounds": 87.0875
+  },
+  "lev1|rates": {
+   "n": 400,
+   "meanGap": 0.05586899575433915,
+   "d": 0.12261682835940348,
+   "n80": 523,
+   "xWinRate": 0.5925,
+   "xWinBase": 0.5,
+   "rounds": 82.915
+  },
+  "lev1|stale": {
+   "n": 400,
+   "meanGap": 0.19972970479515745,
+   "d": 0.5167031862411259,
+   "n80": 30,
+   "xWinRate": 0.71,
+   "xWinBase": 0.5,
+   "rounds": 83.06
+  },
+  "lev5|overall": {
+   "n": 400,
+   "meanGap": 0.07670722691859634,
+   "d": 0.26214362197347735,
+   "n80": 115,
+   "xWinRate": 0.6925,
+   "xWinBase": 0.5,
+   "rounds": 91.49
+  },
+  "lev5|valuation": {
+   "n": 400,
+   "meanGap": 0.00793367540287605,
+   "d": 0.017890929573393003,
+   "n80": 24525,
+   "xWinRate": 0.51,
+   "xWinBase": 0.5,
+   "rounds": 79.4475
+  },
+  "lev5|negotiation": {
+   "n": 400,
+   "meanGap": 0.07405724151403736,
+   "d": 0.2101802833717808,
+   "n80": 178,
+   "xWinRate": 0.57,
+   "xWinBase": 0.5,
+   "rounds": 88.59
+  },
+  "lev5|adverse": {
+   "n": 400,
+   "meanGap": 0.048732532675018675,
+   "d": 0.10385634273229483,
+   "n80": 728,
+   "xWinRate": 0.54,
+   "xWinBase": 0.5,
+   "rounds": 71.32
+  },
+  "lev5|sizing": {
+   "n": 400,
+   "meanGap": -0.07589105671887857,
+   "d": -0.1642822037887347,
+   "n80": null,
+   "xWinRate": 0.4225,
+   "xWinBase": 0.5,
+   "rounds": 62.295
+  },
+  "lev5|leverage": {
+   "n": 400,
+   "meanGap": 0.26496373952621716,
+   "d": 0.6949651239702652,
+   "n80": 17,
+   "xWinRate": 0.7575,
+   "xWinBase": 0.5,
+   "rounds": 68.8275
+  },
+  "lev5|credit": {
+   "n": 400,
+   "meanGap": 0.02345102424656388,
+   "d": 0.05331352158637484,
+   "n80": 2762,
+   "xWinRate": 0.51,
+   "xWinBase": 0.5,
+   "rounds": 81.4275
+  },
+  "lev5|rates": {
+   "n": 400,
+   "meanGap": 0.08771855061170733,
+   "d": 0.1939849423696636,
+   "n80": 209,
+   "xWinRate": 0.62,
+   "xWinBase": 0.5,
+   "rounds": 78.29
+  },
+  "lev5|stale": {
+   "n": 400,
+   "meanGap": 0.1757295423498168,
+   "d": 0.45207359057209434,
+   "n80": 39,
+   "xWinRate": 0.675,
+   "xWinBase": 0.5,
+   "rounds": 83.535
+  },
+  "cash3000|overall": {
+   "n": 400,
+   "meanGap": 0.05046124621097045,
+   "d": 0.16155814501299556,
+   "n80": 301,
+   "xWinRate": 0.6625,
+   "xWinBase": 0.5,
+   "rounds": 94.1025
+  },
+  "cash3000|valuation": {
+   "n": 400,
+   "meanGap": -0.024578679687212418,
+   "d": -0.05910637768301025,
+   "n80": null,
+   "xWinRate": 0.475,
+   "xWinBase": 0.5,
+   "rounds": 88.4225
+  },
+  "cash3000|negotiation": {
+   "n": 400,
+   "meanGap": 0.07629747640926209,
+   "d": 0.2560743855370466,
+   "n80": 120,
+   "xWinRate": 0.5925,
+   "xWinBase": 0.5,
+   "rounds": 95.7525
+  },
+  "cash3000|adverse": {
+   "n": 400,
+   "meanGap": 0.10505335716568863,
+   "d": 0.24156837727017094,
+   "n80": 135,
+   "xWinRate": 0.6075,
+   "xWinBase": 0.5,
+   "rounds": 82.2275
+  },
+  "cash3000|sizing": {
+   "n": 400,
+   "meanGap": -0.06355905039381655,
+   "d": -0.14414513267831766,
+   "n80": null,
+   "xWinRate": 0.4325,
+   "xWinBase": 0.5,
+   "rounds": 76.9625
+  },
+  "cash3000|leverage": {
+   "n": 400,
+   "meanGap": 0.20892301838962044,
+   "d": 0.5641591422325194,
+   "n80": 25,
+   "xWinRate": 0.6825,
+   "xWinBase": 0.5,
+   "rounds": 83.0575
+  },
+  "cash3000|credit": {
+   "n": 400,
+   "meanGap": 0.007218939374307683,
+   "d": 0.017955833453296155,
+   "n80": 24348,
+   "xWinRate": 0.5025,
+   "xWinBase": 0.5,
+   "rounds": 90.0525
+  },
+  "cash3000|rates": {
+   "n": 400,
+   "meanGap": 0.22435085559853526,
+   "d": 0.6292499250397913,
+   "n80": 20,
+   "xWinRate": 0.805,
+   "xWinBase": 0.5,
+   "rounds": 90.53
+  },
+  "cash3000|stale": {
+   "n": 400,
+   "meanGap": 0.14888961568798673,
+   "d": 0.42564131665467825,
+   "n80": 44,
+   "xWinRate": 0.68,
+   "xWinBase": 0.5,
+   "rounds": 92.535
+  },
+  "baseFix|overall": {
+   "n": 400,
+   "meanGap": 0.08651772562436283,
+   "d": 0.30142250384818375,
+   "n80": 87,
+   "xWinRate": 0.705,
+   "xWinBase": 0.5,
+   "rounds": 91.0925
+  },
+  "baseFix|valuation": {
+   "n": 400,
+   "meanGap": 0.009914027891068466,
+   "d": 0.022975023253970644,
+   "n80": 14872,
+   "xWinRate": 0.4975,
+   "xWinBase": 0.5,
+   "rounds": 81.4175
+  },
+  "baseFix|negotiation": {
+   "n": 400,
+   "meanGap": 0.06613144132191205,
+   "d": 0.19501836858317578,
+   "n80": 207,
+   "xWinRate": 0.5575,
+   "xWinBase": 0.5,
+   "rounds": 89.935
+  },
+  "baseFix|adverse": {
+   "n": 400,
+   "meanGap": 0.04379324078887417,
+   "d": 0.09348743979083857,
+   "n80": 899,
+   "xWinRate": 0.55,
+   "xWinBase": 0.5,
+   "rounds": 73.41
+  },
+  "baseFix|sizing": {
+   "n": 400,
+   "meanGap": -0.1105524029790843,
+   "d": -0.24240383639671986,
+   "n80": null,
+   "xWinRate": 0.3825,
+   "xWinBase": 0.5,
+   "rounds": 64.4725
+  },
+  "baseFix|leverage": {
+   "n": 400,
+   "meanGap": 0.22962404788859783,
+   "d": 0.5880074938695099,
+   "n80": 23,
+   "xWinRate": 0.7225,
+   "xWinBase": 0.5,
+   "rounds": 73.25
+  },
+  "baseFix|credit": {
+   "n": 400,
+   "meanGap": -0.008893388414815963,
+   "d": -0.020473788827763115,
+   "n80": null,
+   "xWinRate": 0.4825,
+   "xWinBase": 0.5,
+   "rounds": 79.7975
+  },
+  "baseFix|rates": {
+   "n": 400,
+   "meanGap": -0.00922646226892399,
+   "d": -0.02109139892346066,
+   "n80": null,
+   "xWinRate": 0.4675,
+   "xWinBase": 0.5,
+   "rounds": 79.5225
+  },
+  "baseFix|stale": {
+   "n": 400,
+   "meanGap": -0.017035851033638826,
+   "d": -0.03757433278783624,
+   "n80": null,
+   "xWinRate": 0.4875,
+   "xWinBase": 0.5,
+   "rounds": 77.3375
+  },
+  "draft|overall": {
+   "n": 400,
+   "meanGap": 0.10528078202425871,
+   "d": 0.2799176833475646,
+   "n80": 101,
+   "xWinRate": 0.605,
+   "xWinBase": 0.5,
+   "rounds": 74.7225
+  },
+  "draft|valuation": {
+   "n": 400,
+   "meanGap": 0.04597386619769504,
+   "d": 0.0980675247513419,
+   "n80": 817,
+   "xWinRate": 0.555,
+   "xWinBase": 0.5,
+   "rounds": 63.3225
+  },
+  "draft|negotiation": {
+   "n": 400,
+   "meanGap": 0.06262451711816781,
+   "d": 0.14377061120393714,
+   "n80": 380,
+   "xWinRate": 0.5575,
+   "xWinBase": 0.5,
+   "rounds": 68.4975
+  },
+  "draft|adverse": {
+   "n": 400,
+   "meanGap": 0.024372463793143114,
+   "d": 0.049289666063741834,
+   "n80": 3232,
+   "xWinRate": 0.525,
+   "xWinBase": 0.5,
+   "rounds": 51.6275
+  },
+  "draft|sizing": {
+   "n": 400,
+   "meanGap": -0.28052044608471455,
+   "d": -0.6996800773475943,
+   "n80": null,
+   "xWinRate": 0.2125,
+   "xWinBase": 0.5,
+   "rounds": 36.405
+  },
+  "draft|leverage": {
+   "n": 400,
+   "meanGap": 0.32490032393696616,
+   "d": 0.8700197418898493,
+   "n80": 11,
+   "xWinRate": 0.82,
+   "xWinBase": 0.5,
+   "rounds": 48.93
+  },
+  "draft|credit": {
+   "n": 400,
+   "meanGap": 0.007898239542135074,
+   "d": 0.016410466018685857,
+   "n80": 29150,
+   "xWinRate": 0.51,
+   "xWinBase": 0.5,
+   "rounds": 60.29
+  },
+  "draft|rates": {
+   "n": 400,
+   "meanGap": -0.046055485339474414,
+   "d": -0.09470810764347866,
+   "n80": null,
+   "xWinRate": 0.465,
+   "xWinBase": 0.5,
+   "rounds": 53.97
+  },
+  "draft|stale": {
+   "n": 400,
+   "meanGap": 0.12692586760782626,
+   "d": 0.2734086938915212,
+   "n80": 106,
+   "xWinRate": 0.63,
+   "xWinBase": 0.5,
+   "rounds": 59.67
+  },
+  "smoothRent|overall": {
+   "n": 400,
+   "meanGap": 0.05771587077710251,
+   "d": 0.17851789515720062,
+   "n80": 247,
+   "xWinRate": 0.6675,
+   "xWinBase": 0.5,
+   "rounds": 87.785
+  },
+  "smoothRent|valuation": {
+   "n": 400,
+   "meanGap": 0.03994056278336828,
+   "d": 0.08845075531561705,
+   "n80": 1004,
+   "xWinRate": 0.5475,
+   "xWinBase": 0.5,
+   "rounds": 76.0375
+  },
+  "smoothRent|negotiation": {
+   "n": 400,
+   "meanGap": 0.07146615962675874,
+   "d": 0.19664554237027837,
+   "n80": 204,
+   "xWinRate": 0.5575,
+   "xWinBase": 0.5,
+   "rounds": 85.345
+  },
+  "smoothRent|adverse": {
+   "n": 400,
+   "meanGap": 0.04141586965982281,
+   "d": 0.08889731177516366,
+   "n80": 994,
+   "xWinRate": 0.55,
+   "xWinBase": 0.5,
+   "rounds": 71.5325
+  },
+  "smoothRent|sizing": {
+   "n": 400,
+   "meanGap": -0.1288813106233811,
+   "d": -0.2785790372531751,
+   "n80": null,
+   "xWinRate": 0.3625,
+   "xWinBase": 0.5,
+   "rounds": 56.0275
+  },
+  "smoothRent|leverage": {
+   "n": 400,
+   "meanGap": 0.20774259233599804,
+   "d": 0.503171249804483,
+   "n80": 32,
+   "xWinRate": 0.71,
+   "xWinBase": 0.5,
+   "rounds": 70.1
+  },
+  "smoothRent|credit": {
+   "n": 400,
+   "meanGap": 0.022008861770177895,
+   "d": 0.05007753963328549,
+   "n80": 3131,
+   "xWinRate": 0.5275,
+   "xWinBase": 0.5,
+   "rounds": 77.4475
+  },
+  "smoothRent|rates": {
+   "n": 400,
+   "meanGap": 0.019286398178042057,
+   "d": 0.040996561551861724,
+   "n80": 4671,
+   "xWinRate": 0.5375,
+   "xWinBase": 0.5,
+   "rounds": 70.51
+  },
+  "smoothRent|stale": {
+   "n": 400,
+   "meanGap": 0.16660255233215043,
+   "d": 0.4009229853958144,
+   "n80": 49,
+   "xWinRate": 0.69,
+   "xWinBase": 0.5,
+   "rounds": 77.6925
+  },
+  "proposed|overall": {
+   "n": 400,
+   "meanGap": 0.14675879147671883,
+   "d": 0.3975383763068105,
+   "n80": 50,
+   "xWinRate": 0.6875,
+   "xWinBase": 0.5,
+   "rounds": 70.7275
+  },
+  "proposed|valuation": {
+   "n": 400,
+   "meanGap": 0.04533430125221503,
+   "d": 0.09697834463556028,
+   "n80": 835,
+   "xWinRate": 0.5425,
+   "xWinBase": 0.5,
+   "rounds": 66.2275
+  },
+  "proposed|negotiation": {
+   "n": 400,
+   "meanGap": 0.051512699662470886,
+   "d": 0.11992282321278942,
+   "n80": 546,
+   "xWinRate": 0.5475,
+   "xWinBase": 0.5,
+   "rounds": 72.4225
+  },
+  "proposed|adverse": {
+   "n": 400,
+   "meanGap": -0.00325047021808923,
+   "d": -0.0067576535673887,
+   "n80": null,
+   "xWinRate": 0.49,
+   "xWinBase": 0.5,
+   "rounds": 60.1825
+  },
+  "proposed|sizing": {
+   "n": 400,
+   "meanGap": -0.41238507457413454,
+   "d": -1.5110835897138484,
+   "n80": null,
+   "xWinRate": 0.085,
+   "xWinBase": 0.5,
+   "rounds": 27.0575
+  },
+  "proposed|leverage": {
+   "n": 400,
+   "meanGap": 0.1936365647804724,
+   "d": 0.4374445945324655,
+   "n80": 42,
+   "xWinRate": 0.6925,
+   "xWinBase": 0.5,
+   "rounds": 53.9975
+  },
+  "proposed|credit": {
+   "n": 400,
+   "meanGap": 0.02154787776330103,
+   "d": 0.04521211829983969,
+   "n80": 3841,
+   "xWinRate": 0.515,
+   "xWinBase": 0.5,
+   "rounds": 62.41
+  },
+  "proposed|rates": {
+   "n": 400,
+   "meanGap": -0.0849372781798198,
+   "d": -0.17584526690192304,
+   "n80": null,
+   "xWinRate": 0.4175,
+   "xWinBase": 0.5,
+   "rounds": 58.44
+  },
+  "proposed|stale": {
+   "n": 400,
+   "meanGap": 0.12347312852032685,
+   "d": 0.27205588568897465,
+   "n80": 107,
+   "xWinRate": 0.6175,
+   "xWinBase": 0.5,
+   "rounds": 62.085
+  },
+  "proposedFix|overall": {
+   "n": 400,
+   "meanGap": 0.13735641935888987,
+   "d": 0.36926497417096504,
+   "n80": 58,
+   "xWinRate": 0.67,
+   "xWinBase": 0.5,
+   "rounds": 70.7975
+  },
+  "proposedFix|valuation": {
+   "n": 400,
+   "meanGap": 0.09778863440598555,
+   "d": 0.21501795434534077,
+   "n80": 170,
+   "xWinRate": 0.595,
+   "xWinBase": 0.5,
+   "rounds": 67.815
+  },
+  "proposedFix|negotiation": {
+   "n": 400,
+   "meanGap": 0.04210396835071176,
+   "d": 0.09921409090193738,
+   "n80": 798,
+   "xWinRate": 0.55,
+   "xWinBase": 0.5,
+   "rounds": 72.055
+  },
+  "proposedFix|adverse": {
+   "n": 400,
+   "meanGap": -0.008245737676071153,
+   "d": -0.017111587610846288,
+   "n80": null,
+   "xWinRate": 0.5,
+   "xWinBase": 0.5,
+   "rounds": 57.7325
+  },
+  "proposedFix|sizing": {
+   "n": 400,
+   "meanGap": -0.4017092226088058,
+   "d": -1.3899267163155298,
+   "n80": null,
+   "xWinRate": 0.0975,
+   "xWinBase": 0.5,
+   "rounds": 27.5875
+  },
+  "proposedFix|leverage": {
+   "n": 400,
+   "meanGap": 0.1743966097195823,
+   "d": 0.38150762690029694,
+   "n80": 54,
+   "xWinRate": 0.675,
+   "xWinBase": 0.5,
+   "rounds": 53.685
+  },
+  "proposedFix|credit": {
+   "n": 400,
+   "meanGap": 0.013632008814143708,
+   "d": 0.028766073281953578,
+   "n80": 9487,
+   "xWinRate": 0.52,
+   "xWinBase": 0.5,
+   "rounds": 62.8975
+  },
+  "proposedFix|rates": {
+   "n": 400,
+   "meanGap": 0.015618324218035506,
+   "d": 0.03291725721201602,
+   "n80": 7245,
+   "xWinRate": 0.5225,
+   "xWinBase": 0.5,
+   "rounds": 63.06
+  },
+  "proposedFix|stale": {
+   "n": 400,
+   "meanGap": 0.0040073262630204495,
+   "d": 0.008367788256839896,
+   "n80": 112112,
+   "xWinRate": 0.495,
+   "xWinBase": 0.5,
+   "rounds": 60.195
+  }
+ },
+ "mirror": {
+  "base": {
+   "rounds": 77.7375,
+   "finished": 0.6875,
+   "actions": 901.545,
+   "seatSpread": 0.005,
+   "deskPnl": -1095.5175,
+   "maxShare": 0.887932889439672
+  },
+  "noCards": {
+   "rounds": 75.3825,
+   "finished": 0.7475,
+   "actions": 882.27,
+   "seatSpread": 0.0475,
+   "deskPnl": -624.4175,
+   "maxShare": 0.905130360827849
+  },
+  "noMacroCards": {
+   "rounds": 76.1475,
+   "finished": 0.695,
+   "actions": 884.97,
+   "seatSpread": 0.0275,
+   "deskPnl": -1089.155,
+   "maxShare": 0.8899464159907043
+  },
+  "noJail": {
+   "rounds": 77.2825,
+   "finished": 0.6525,
+   "actions": 900.005,
+   "seatSpread": 0.03,
+   "deskPnl": -1854.42,
+   "maxShare": 0.8715748572236788
+  },
+  "noDoubles": {
+   "rounds": 80.65,
+   "finished": 0.63,
+   "actions": 874.2025,
+   "seatSpread": 0.05,
+   "deskPnl": -426.59,
+   "maxShare": 0.8641197234550735
+  },
+  "lowVarDice": {
+   "rounds": 79.0675,
+   "finished": 0.65,
+   "actions": 909.685,
+   "seatSpread": 0.0475,
+   "deskPnl": -1176.83,
+   "maxShare": 0.8762408110498004
+  },
+  "noAuction": {
+   "rounds": 87.325,
+   "finished": 0.4975,
+   "actions": 889.4225,
+   "seatSpread": 0.0775,
+   "deskPnl": -1046.2025,
+   "maxShare": 0.8151290309900959
+  },
+  "lev1": {
+   "rounds": 81.06,
+   "finished": 0.6275,
+   "actions": 924.4875,
+   "seatSpread": 0.08,
+   "deskPnl": -607.815,
+   "maxShare": 0.851332728765143
+  },
+  "lev5": {
+   "rounds": 79.2125,
+   "finished": 0.675,
+   "actions": 915.9075,
+   "seatSpread": 0.03,
+   "deskPnl": -1062.49,
+   "maxShare": 0.8875692551861762
+  },
+  "cash3000": {
+   "rounds": 88.0025,
+   "finished": 0.4325,
+   "actions": 955.0725,
+   "seatSpread": 0.0225,
+   "deskPnl": -1376.1225,
+   "maxShare": 0.8020843336494576
+  },
+  "baseFix": {
+   "rounds": 79.515,
+   "finished": 0.6225,
+   "actions": 921.705,
+   "seatSpread": 0.035,
+   "deskPnl": -2598.9725,
+   "maxShare": 0.8597324958139672
+  },
+  "draft": {
+   "rounds": 56.9925,
+   "finished": 0.91,
+   "actions": 935.3975,
+   "seatSpread": 0.0675,
+   "deskPnl": 96.1525,
+   "maxShare": 0.9666502190523053
+  },
+  "smoothRent": {
+   "rounds": 77.2825,
+   "finished": 0.6625,
+   "actions": 896.575,
+   "seatSpread": 0.0475,
+   "deskPnl": 248.7675,
+   "maxShare": 0.8749166883658881
+  },
+  "proposed": {
+   "rounds": 62.3025,
+   "finished": 0.855,
+   "actions": 939.6925,
+   "seatSpread": 0.045,
+   "deskPnl": 1198.19,
+   "maxShare": 0.9452522203576633
+  },
+  "proposedFix": {
+   "rounds": 62.94,
+   "finished": 0.8325,
+   "actions": 949.66,
+   "seatSpread": 0.1025,
+   "deskPnl": 509.26,
+   "maxShare": 0.9458323452432386
+  }
+ }
+}

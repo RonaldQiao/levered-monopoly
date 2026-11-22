@@ -1,0 +1,246 @@
+{
+ "N": 300,
+ "maxRounds": 60,
+ "variants": [
+  "base",
+  "proposedFix"
+ ],
+ "skills": [
+  {
+   "key": "overall",
+   "label": "Overall play (pro vs casual)",
+   "x": "pro",
+   "y": "casual"
+  },
+  {
+   "key": "valuation",
+   "label": "Valuation (pro vs over-bidder)",
+   "x": "pro",
+   "y": "pro_overbid"
+  },
+  {
+   "key": "negotiation",
+   "label": "Negotiation (pro vs no-trade)",
+   "x": "pro",
+   "y": "pro_noTrade"
+  },
+  {
+   "key": "adverse",
+   "label": "Adverse selection (pro vs accepts-all)",
+   "x": "pro",
+   "y": "pro_sucker"
+  },
+  {
+   "key": "sizing",
+   "label": "Position sizing (pro vs reckless leverage)",
+   "x": "pro",
+   "y": "pro_reckless"
+  },
+  {
+   "key": "leverage",
+   "label": "Using leverage (pro vs never-borrow)",
+   "x": "pro",
+   "y": "pro_noLev"
+  },
+  {
+   "key": "credit",
+   "label": "Credit-event trading (distress vs pro)",
+   "x": "pro_distress",
+   "y": "pro"
+  },
+  {
+   "key": "rates",
+   "label": "Rates carry (carry vs pro)",
+   "x": "pro_carry",
+   "y": "pro"
+  },
+  {
+   "key": "stale",
+   "label": "Stale-quote arbitrage (stale vs pro)",
+   "x": "pro_stale",
+   "y": "pro"
+  }
+ ],
+ "cells": {
+  "base|overall": {
+   "n": 300,
+   "meanGap": 0.07367766561219949,
+   "d": 0.3284006002499553,
+   "n80": 73,
+   "xWinRate": 0.6766666666666666,
+   "xWinBase": 0.5,
+   "rounds": 58.776666666666664
+  },
+  "base|valuation": {
+   "n": 300,
+   "meanGap": 0.0181432932933671,
+   "d": 0.050175737313408554,
+   "n80": 3119,
+   "xWinRate": 0.5233333333333333,
+   "xWinBase": 0.5,
+   "rounds": 57.516666666666666
+  },
+  "base|negotiation": {
+   "n": 300,
+   "meanGap": 0.05692680657497606,
+   "d": 0.20729656404202312,
+   "n80": 183,
+   "xWinRate": 0.5633333333333334,
+   "xWinBase": 0.5,
+   "rounds": 58.723333333333336
+  },
+  "base|adverse": {
+   "n": 300,
+   "meanGap": 0.02645538575649281,
+   "d": 0.06760352912046735,
+   "n80": 1718,
+   "xWinRate": 0.52,
+   "xWinBase": 0.5,
+   "rounds": 56.083333333333336
+  },
+  "base|sizing": {
+   "n": 300,
+   "meanGap": -0.10638329124190664,
+   "d": -0.26851159611991715,
+   "n80": null,
+   "xWinRate": 0.36666666666666664,
+   "xWinBase": 0.5,
+   "rounds": 51.346666666666664
+  },
+  "base|leverage": {
+   "n": 300,
+   "meanGap": 0.2497952902269276,
+   "d": 0.7734845879646234,
+   "n80": 14,
+   "xWinRate": 0.7233333333333334,
+   "xWinBase": 0.5,
+   "rounds": 53.71666666666667
+  },
+  "base|credit": {
+   "n": 300,
+   "meanGap": 0.01783935788745341,
+   "d": 0.05043175901357294,
+   "n80": 3087,
+   "xWinRate": 0.49,
+   "xWinBase": 0.5,
+   "rounds": 57.916666666666664
+  },
+  "base|rates": {
+   "n": 300,
+   "meanGap": 0.030692269193658462,
+   "d": 0.07401585860749282,
+   "n80": 1433,
+   "xWinRate": 0.5566666666666666,
+   "xWinBase": 0.5,
+   "rounds": 55.37
+  },
+  "base|stale": {
+   "n": 300,
+   "meanGap": 0.16917877585916738,
+   "d": 0.5344292798501749,
+   "n80": 28,
+   "xWinRate": 0.6966666666666667,
+   "xWinBase": 0.5,
+   "rounds": 58.06
+  },
+  "proposedFix|overall": {
+   "n": 300,
+   "meanGap": 0.11604087213996664,
+   "d": 0.3303869397651594,
+   "n80": 72,
+   "xWinRate": 0.6166666666666667,
+   "xWinBase": 0.5,
+   "rounds": 51.2
+  },
+  "proposedFix|valuation": {
+   "n": 300,
+   "meanGap": 0.09509299488840954,
+   "d": 0.23594827999919318,
+   "n80": 142,
+   "xWinRate": 0.6066666666666667,
+   "xWinBase": 0.5,
+   "rounds": 53.34
+  },
+  "proposedFix|negotiation": {
+   "n": 300,
+   "meanGap": 0.06391201540476142,
+   "d": 0.1660485461995683,
+   "n80": 285,
+   "xWinRate": 0.5766666666666667,
+   "xWinBase": 0.5,
+   "rounds": 53.736666666666665
+  },
+  "proposedFix|adverse": {
+   "n": 300,
+   "meanGap": 0.0014209683228320162,
+   "d": 0.0032236632920129,
+   "n80": 755389,
+   "xWinRate": 0.5033333333333333,
+   "xWinBase": 0.5,
+   "rounds": 48.67333333333333
+  },
+  "proposedFix|sizing": {
+   "n": 300,
+   "meanGap": -0.39848930260455584,
+   "d": -1.4302376572000954,
+   "n80": null,
+   "xWinRate": 0.09,
+   "xWinBase": 0.5,
+   "rounds": 26.09
+  },
+  "proposedFix|leverage": {
+   "n": 300,
+   "meanGap": 0.18761607788375334,
+   "d": 0.4505941092769397,
+   "n80": 39,
+   "xWinRate": 0.6866666666666666,
+   "xWinBase": 0.5,
+   "rounds": 45.94
+  },
+  "proposedFix|credit": {
+   "n": 300,
+   "meanGap": 0.02674323337862609,
+   "d": 0.06250949241491262,
+   "n80": 2009,
+   "xWinRate": 0.53,
+   "xWinBase": 0.5,
+   "rounds": 51.22
+  },
+  "proposedFix|rates": {
+   "n": 300,
+   "meanGap": 0.028920222031705026,
+   "d": 0.06757712184173081,
+   "n80": 1719,
+   "xWinRate": 0.5333333333333333,
+   "xWinBase": 0.5,
+   "rounds": 51.21
+  },
+  "proposedFix|stale": {
+   "n": 300,
+   "meanGap": 0.015799095718117863,
+   "d": 0.0359672194264226,
+   "n80": 6069,
+   "xWinRate": 0.5066666666666667,
+   "xWinBase": 0.5,
+   "rounds": 49.87
+  }
+ },
+ "mirror": {
+  "base": {
+   "rounds": 57.3,
+   "finished": 0.24666666666666667,
+   "actions": 724.2266666666667,
+   "seatSpread": 0.05,
+   "deskPnl": 218.64,
+   "maxShare": 0.7057987613392084
+  },
+  "proposedFix": {
+   "rounds": 51.21,
+   "finished": 0.5266666666666666,
+   "actions": 858.64,
+   "seatSpread": 0.07333333333333333,
+   "deskPnl": 1214.8533333333332,
+   "maxShare": 0.8414822010964907
+  }
+ }
+}

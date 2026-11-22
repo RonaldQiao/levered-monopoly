@@ -5,7 +5,8 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "test": "node --test"
+    "test": "node --test",
+    "sim": "node sim/experiments.js all && node sim/formats.js all && node sim/round2.js"
   },
   "license": "MIT",
   "dependencies": {

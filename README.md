@@ -134,6 +134,7 @@ src/engine.js      authoritative rules engine (traditional rules, central bank, 
 src/desk.js        bank desk (shares, options, CDS, insurance, swaps)
 src/pricing.js     shared pricing (Black-Scholes etc.), used by server and browser
 src/bot.js         AI players
+sim/               headless AI-vs-AI simulation harness + rules/skill study (see sim/REPORT.md)
 public/            browser client (vanilla JS, no build step)
 test/              node:test suite incl. randomised full-game fuzzing
 ```
