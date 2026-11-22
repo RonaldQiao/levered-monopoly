@@ -34,6 +34,8 @@ const DEFAULT_SETTINGS = {
 };
 
 const LOAN_TERMS = [5, 10, 20];
+const FLOAT_MARGIN = 0.25;                          // floating loans: policy rate + this + credit spread
+const FIXED_PREMIUM = { 5: 0.25, 10: 0.35, 20: 0.5 }; // extra cost of locking a fixed rate
 const BAIL = 50;
 const AUCTION_START_MS = 25000;
 const AUCTION_BID_MS = 12000;
@@ -79,7 +81,7 @@ class Game {
   }
 
   // ---------------------------------------------------------------- lobby
-  addPlayer(name) {
+  addPlayer(name, opts = {}) {
     if (this.status !== 'lobby') fail('Game already started');
     if (this.players.length >= 8) fail('Room is full (8 players)');
     name = String(name || '').trim().slice(0, 20) || `Player ${this.players.length + 1}`;
@@ -88,13 +90,28 @@ class Game {
     const t = TOKENS.find((x) => !used.has(x.token));
     const p = {
       id: this.id('p'), name, token: t.token, color: t.color,
-      host: this.players.length === 0,
+      host: !opts.bot && !this.players.some((x) => x.host),
+      bot: !!opts.bot,
       cash: 0, pos: 0, inJail: false, jailTurns: 0, jailCards: [],
       loans: [], bankrupt: false, marginCall: false, connected: true,
     };
     this.players.push(p);
-    this.addLog(`${p.name} joined the room.`);
+    this.addLog(`${p.name} ${p.bot ? '(AI) ' : ''}joined the room.`);
     return p;
+  }
+
+  addBot(pid) {
+    this.requireHost(pid);
+    const names = ['Ada', 'Keynes', 'Fisher', 'Minsky', 'Volcker', 'Ricardo', 'Hayek', 'Samuelson'];
+    const name = names.map((n) => `${n} (AI)`).find((n) => !this.players.some((p) => p.name === n));
+    return this.addPlayer(name || `Bot ${this.players.length + 1}`, { bot: true });
+  }
+
+  removeBot(pid, target) {
+    this.requireHost(pid);
+    const b = this.player(target);
+    if (!b.bot) fail('That player is not a bot');
+    this.removeLobbyPlayer(b.id);
   }
 
   removeLobbyPlayer(pid) {
@@ -102,7 +119,8 @@ class Game {
     const i = this.players.findIndex((p) => p.id === pid);
     if (i < 0) return;
     const [p] = this.players.splice(i, 1);
-    if (p.host && this.players[0]) this.players[0].host = true;
+    const heir = this.players.find((x) => !x.bot);
+    if (p.host && heir) heir.host = true;
     this.addLog(`${p.name} left the room.`);
   }
 
@@ -137,6 +155,7 @@ class Game {
       bankLosses: 0, history: [],
     };
     this.status = 'playing';
+    this.initDesk();
     this.round = 0;
     this.recordHistory(); // round 0 = opening conditions
     this.round = 1;
@@ -232,6 +251,7 @@ class Game {
         if (cl.from === p.id) nw -= (cl.pct / 100) * Math.max(0, this.bookEquity(p));
       }
     }
+    if (this.desk) nw += this.deskValue(p);
     return Math.round(nw);
   }
 
@@ -241,11 +261,18 @@ class Game {
     const premium = { 5: 0.25, 10: 0.5, 20: 1.0 }[term];
     return w * this.econ.policyRate + (1 - w) * (this.settings.neutralRate + this.settings.inflationTarget) + premium;
   }
-  quote(p, term, extra = 0) {
+  creditSpread(p, extra = 0) {
     const eq = this.bookEquity(p);
     const lev = eq > 0 ? (this.assets(p) + extra) / eq : 10;
-    const spread = 0.5 * Math.max(0, lev - 1);
-    return Math.round((this.curveRate(term) + spread) * 20) / 20;
+    return 0.5 * Math.max(0, lev - 1);
+  }
+  // Floating = policy + 0.25% + credit spread, reset every round.
+  // Fixed = max(curve, floating base) + a lock-in premium + credit spread, so fixed always costs more at signing.
+  quote(p, term, extra = 0, kind = 'fixed') {
+    const spread = this.creditSpread(p, extra);
+    const base = this.econ.policyRate + FLOAT_MARGIN;
+    const r = kind === 'floating' ? base : Math.max(this.curveRate(term), base) + FIXED_PREMIUM[term];
+    return Math.round((r + spread) * 20) / 20;
   }
 
   // ---------------------------------------------------------------- money movement
@@ -322,6 +349,7 @@ class Game {
       const rent = this.rentFor(i, dice, opts);
       this.pay(p.id, pr.owner, rent, `rent on ${s.name}`, { spending: true });
       this.onRentReceived(pr.owner, i, rent);
+      this.onRentPaid(p.id, rent);
       return;
     }
     if (s.type === 'tax') { this.pay(p.id, null, this.taxAmount(i), s.name, { spending: true }); return; }
@@ -591,14 +619,15 @@ class Game {
     // Central-bank loans: interest then maturities.
     for (const p of this.active()) {
       for (const l of p.loans.slice()) {
+        if (l.kind === 'floating') l.rate = round2(this.econ.policyRate + l.margin);
         const interest = Math.max(1, Math.round(l.principal * l.rate / 100));
-        this.pay(p.id, null, interest, `interest on bank loan @${l.rate.toFixed(2)}%`);
+        this.pay(p.id, null, interest, `interest on ${l.kind || 'fixed'} bank loan @${l.rate.toFixed(2)}%`);
         if (this.round >= l.maturity) {
           if (p.cash >= l.principal) {
             this.pay(p.id, null, l.principal, 'bank loan matured — principal repaid');
             p.loans = p.loans.filter((x) => x !== l);
           } else {
-            l.rate = round2(this.curveRate(5) + 2);
+            if (l.kind === 'floating') { l.margin = round2(l.margin + 2); l.rate = round2(this.econ.policyRate + l.margin); } else l.rate = round2(this.curveRate(5) + 2);
             l.maturity = this.round + 5;
             l.term = 5;
             this.addLog(`⚠ ${p.name} could not repay a $${l.principal} loan — rolled over at a penalty rate of ${l.rate.toFixed(2)}%.`, 'warn');
@@ -607,20 +636,25 @@ class Game {
       }
     }
     this.settleContracts();
+    this.settleDesk();
+    this.markEquity();
   }
 
-  borrow(p, amount, term) {
+  borrow(p, amount, term, kind = 'fixed') {
     this.requireAlive(p);
     amount = toInt(amount, 'amount'); term = toInt(term, 'term');
+    kind = kind === 'floating' ? 'floating' : 'fixed';
     if (this.settings.maxLeverage <= 1) fail('Central-bank borrowing is disabled in this game');
     if (!LOAN_TERMS.includes(term)) fail('Loan term must be 5, 10 or 20 rounds');
     if (amount < 10) fail('Minimum loan is $10');
     const room = this.borrowHeadroom(p);
     if (amount > room) fail(`Leverage cap: you can borrow at most $${room} more`);
-    const rate = this.quote(p, term, amount);
-    p.loans.push({ id: this.id('L'), principal: amount, rate, term, start: this.round, maturity: this.round + term });
+    const rate = this.quote(p, term, amount, kind);
+    const loan = { id: this.id('L'), kind, principal: amount, rate, term, start: this.round, maturity: this.round + term };
+    if (kind === 'floating') loan.margin = round2(rate - this.econ.policyRate);
+    p.loans.push(loan);
     p.cash += amount;
-    this.addLog(`🏦 ${p.name} borrows $${amount} from the central bank for ${term} rounds at a fixed ${rate.toFixed(2)}%/round.`, 'bank');
+    this.addLog(`🏦 ${p.name} borrows $${amount} from the central bank for ${term} rounds at ${kind === 'floating' ? `a floating ${rate.toFixed(2)}%/round (policy + ${loan.margin.toFixed(2)}%)` : `a fixed ${rate.toFixed(2)}%/round`}.`, 'bank');
   }
 
   repay(p, loanId, amount) {
@@ -1001,6 +1035,7 @@ class Game {
     this.requirePlaying();
     if (p.bankrupt) return;
     this.addLog(`☠ ${p.name} ${reason}!`, 'warn');
+    this.deskOnBankrupt(p);
     // Credit-default clauses referencing this player trigger first.
     for (const c of this.contracts) {
       if (c.status !== 'active' || c.parties.includes(p.id)) continue;
@@ -1065,6 +1100,8 @@ class Game {
     const a = msg.action;
     if (a === 'settings') return this.updateSettings(pid, msg.settings || {});
     if (a === 'start') return this.start(pid);
+    if (a === 'addBot') { if (this.status !== 'lobby') fail('Bots join in the lobby'); this.addBot(pid); return; }
+    if (a === 'removeBot') { if (this.status !== 'lobby') fail('Bots leave in the lobby'); return this.removeBot(pid, msg.target); }
     if (a === 'chat') { const text = String(msg.text || '').slice(0, 200).trim(); if (text) this.addLog(`${p.name}: ${text}`, 'chat'); return; }
     this.requirePlaying();
     if (a !== 'kick' && a !== 'endNow') this.requireAlive(p);
@@ -1081,7 +1118,9 @@ class Game {
       case 'sell': return this.sellBuilding(p, msg.space);
       case 'mortgage': return this.mortgage(p, msg.space);
       case 'unmortgage': return this.unmortgage(p, msg.space);
-      case 'borrow': return this.borrow(p, msg.amount, msg.term);
+      case 'borrow': return this.borrow(p, msg.amount, msg.term, msg.kind);
+      case 'deskBuy': return this.deskBuy(p, msg.order || {});
+      case 'deskClose': return this.deskClose(p, msg.id);
       case 'repay': return this.repay(p, msg.loanId, msg.amount);
       case 'proposeTrade': return this.proposeTrade(p, msg.trade || {});
       case 'acceptTrade': return this.respondTrade(p, msg.id, true);
@@ -1103,7 +1142,7 @@ class Game {
   serialize() {
     const playing = this.status !== 'lobby';
     const players = this.players.map((p) => {
-      const base = { id: p.id, name: p.name, token: p.token, color: p.color, host: p.host, connected: p.connected, bankrupt: p.bankrupt };
+      const base = { id: p.id, name: p.name, token: p.token, color: p.color, host: p.host, bot: p.bot, connected: p.connected, bankrupt: p.bankrupt };
       if (!playing) return base;
       const lev = this.leverage(p);
       return {
@@ -1113,6 +1152,8 @@ class Game {
         leverage: Number.isFinite(lev) ? round2(lev) : null, maxLoan: this.maxLoan(p), headroom: this.borrowHeadroom(p),
         marginCall: this.inBreach(p),
         quotes: Object.fromEntries(LOAN_TERMS.map((t) => [t, this.quote(p, t)])),
+        floatQuotes: Object.fromEntries(LOAN_TERMS.map((t) => [t, this.quote(p, t, 0, 'floating')])),
+        deskValue: this.deskValue(p),
       };
     });
     const view = {
@@ -1138,9 +1179,12 @@ class Game {
       },
       trades: this.trades.filter((t) => t.status === 'pending' || t.round >= this.round - 3).slice(-40),
       contracts: this.contracts,
+      desk: this.deskView(),
       now: this.now(),
     };
   }
 }
+
+require('./desk')(Game, { fail, toInt, toNum, clamp, round2 });
 
 module.exports = { Game, GameError, DEFAULT_SETTINGS, LOAN_TERMS, CLAUSE_KINDS };

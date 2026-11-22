@@ -229,6 +229,19 @@ test('fuzz: random full games never throw unexpected errors', () => {
       } else if (r < 0.34) {
         const c = g.contracts.find((x) => x.status === 'active' && x.clauses.some((y) => ['call', 'put'].includes(y.kind)));
         if (c) { const k = c.clauses.findIndex((y) => ['call', 'put'].includes(y.kind)); tryA(c.clauses[k].holder, { action: 'exercise', id: c.id, clause: k }); }
+      } else if (r < 0.39) {
+        const order = pick([
+          { product: 'shares', ref: other.id, shares: 1 + Math.floor(rng() * 20) },
+          { product: pick(['call', 'put']), ref: other.id, shares: 10, strike: Math.floor(rng() * 30), term: pick([5, 10, 20]) },
+          { product: 'cds', ref: other.id, notional: 300, term: pick([5, 10]) },
+          { product: 'insurance', deductible: pick([100, 250, 500]), term: 10 },
+          { product: 'swap', side: pick(['payFixed', 'receiveFixed']), notional: 500, term: 5 },
+        ]);
+        tryA(any.id, { action: 'deskBuy', order });
+        const mineD = g.desk.positions.filter((x) => x.holder === any.id);
+        if (mineD.length && rng() < 0.3) tryA(any.id, { action: 'deskClose', id: pick(mineD).id });
+      } else if (r < 0.41) {
+        tryA(any.id, { action: 'borrow', amount: 200, term: pick([5, 10, 20]), kind: pick(['fixed', 'floating']) });
       }
       if (g.status !== 'playing') break;
       // main turn flow

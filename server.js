@@ -7,6 +7,9 @@ const crypto = require('crypto');
 const { WebSocketServer } = require('ws');
 const { Game, GameError } = require('./src/engine');
 const { SPACES, GROUPS } = require('./src/board');
+const bot = require('./src/bot');
+
+const BOT_DELAY = Number(process.env.BOT_DELAY) || 650; // ms between bot actions so humans can follow along
 
 const PORT = Number(process.env.PORT) || 3000;
 const HOST = process.env.HOST || '0.0.0.0';
@@ -16,8 +19,9 @@ const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; cha
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, 'http://x');
   let file = url.pathname === '/' ? '/index.html' : url.pathname;
-  const full = path.normalize(path.join(PUBLIC, file));
-  if (!full.startsWith(PUBLIC)) { res.writeHead(403); return res.end(); }
+  // Shared bank-desk pricing (same code the server uses).
+  const full = file === '/pricing.js' ? path.join(__dirname, 'src', 'pricing.js') : path.normalize(path.join(PUBLIC, file));
+  if (file !== '/pricing.js' && !full.startsWith(PUBLIC)) { res.writeHead(403); return res.end(); }
   fs.readFile(full, (err, data) => {
     if (err) { res.writeHead(404); return res.end('Not found'); }
     res.writeHead(200, { 'Content-Type': MIME[path.extname(full)] || 'application/octet-stream', 'Cache-Control': 'no-cache' });
@@ -45,6 +49,33 @@ function broadcast(room) {
   const data = JSON.stringify({ type: 'state', state });
   for (const ws of room.sockets) if (ws.readyState === 1) ws.send(data);
   scheduleTick(room);
+  scheduleBots(room);
+}
+
+// One bot action per tick: ask each bot in seat order, apply the first action anyone wants.
+function scheduleBots(room) {
+  clearTimeout(room.botTimer);
+  const g = room.game;
+  if (g.status !== 'playing' || !g.players.some((p) => p.bot && !p.bankrupt)) return;
+  room.botTimer = setTimeout(() => {
+    room.botFails ||= {};
+    for (const p of g.players) {
+      if (!p.bot || p.bankrupt) continue;
+      let a = null;
+      try { a = bot.decide(g, p.id); } catch (e) { console.error('bot decide error', e); }
+      if (!a) continue;
+      try {
+        g.apply(p.id, a);
+        room.botFails[p.id] = 0;
+      } catch (e) {
+        if (!(e instanceof GameError)) console.error(e);
+        bot.markFailed(g, p.id, a);
+        room.botFails[p.id] = (room.botFails[p.id] || 0) + 1;
+        if (room.botFails[p.id] > 25) { console.error(`bot ${p.name} stuck on`, a, e.message); continue; }
+      }
+      return broadcast(room);
+    }
+  }, g.auction ? BOT_DELAY + 250 : BOT_DELAY);
 }
 
 function scheduleTick(room) {

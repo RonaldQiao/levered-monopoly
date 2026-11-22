@@ -117,8 +117,9 @@ function renderLobby() {
   const s = st(); const me = meP();
   $('#lobbyCode').textContent = s.code;
   $('#lobbyUrl').textContent = location.host;
-  $('#lobbyPlayers').innerHTML = s.players.map((p) => `<li style="border-color:${p.color}"><span style="font-size:20px">${p.token}</span><span>${esc(p.name)}</span>${p.host ? '<span class="badge">host</span>' : ''}${p.connected ? '' : '<span class="badge warn">offline</span>'}${p.id === S.me ? '<span class="badge good">you</span>' : ''}</li>`).join('');
   const host = me && me.host; const set = s.settings;
+  $('#lobbyPlayers').innerHTML = s.players.map((p) => `<li style="border-color:${p.color}"><span style="font-size:20px">${p.token}</span><span>${esc(p.name)}</span>${p.bot ? '<span class="badge">AI</span>' : ''}${p.host ? '<span class="badge">host</span>' : ''}${p.connected ? '' : '<span class="badge warn">offline</span>'}${p.id === S.me ? '<span class="badge good">you</span>' : ''}${p.bot && host ? `<button class="small link" data-act="removeBot" data-target="${p.id}" title="Remove this AI player">remove</button>` : ''}</li>`).join('')
+    + (host && s.players.length < 8 ? '<li class="add-bot"><button data-act="addBot">+ Add AI player</button></li>' : '');
   const dis = host ? '' : 'disabled';
   $('#lobbySettings').innerHTML = (`
     <label>Starting cash<input id="setCash" type="number" min="500" max="5000" step="100" value="${set.startingCash}" ${dis}></label>
@@ -161,17 +162,23 @@ function cellParts(sp) {
   if (info && info.mortgaged) cls += ' mortgaged';
   if (side === 'corner') {
     cls += ` corner-${sp.type}`;
-    const label = sp.type === 'jail' ? 'LOCKUP<br><small class="muted">just visiting</small>' : esc(sp.name);
-    body = `<div class="body"><div class="ico">${ICONS[sp.type]}</div><div class="nm">${label}</div>${sp.type === 'go' ? `<div class="pr">collect ${plain$(s.econ.salary)}</div>` : ''}</div>`;
+    if (sp.type === 'jail') {
+      body = '<div class="jail"><div class="bars"><span>LOCK<br>UP</span></div><div class="jv jv-a">JUST</div><div class="jv jv-b">VISITING</div></div>';
+    } else if (sp.type === 'go') {
+      body = `<div class="body"><div class="corner-sub">collect ${plain$(s.econ.salary)} salary as you pass</div><div class="corner-title">PAYDAY</div><div class="go-arrow">⟵</div></div>`;
+    } else {
+      body = `<div class="body"><div class="ico">${ICONS[sp.type]}</div><div class="corner-title">${esc(sp.name)}</div></div>`;
+    }
   } else {
     const ico = sp.type === 'transit' ? transitIcon(sp.name) : sp.type === 'utility' ? utilIcon(sp.name) : ICONS[sp.type] || '';
     let sub = '';
-    if (ownable(sp)) sub = owner ? (info.mortgaged ? 'mortgaged' : info.rentNow != null ? `rent ${plain$(info.rentNow)}` : 'rent 4×/10×') : plain$(info.price);
+    if (ownable(sp)) sub = owner ? (info.mortgaged ? '' : info.rentNow != null ? `rent ${plain$(info.rentNow)}` : 'rent 4×/10×') : plain$(info.price);
     else if (sp.type === 'tax') sub = `pay ${plain$(info.tax)}`;
     body = `<div class="body"><div class="nm">${esc(sp.name)}</div>${ico && sp.type !== 'street' ? `<div class="ico">${ico}</div>` : ''}<div class="pr">${sub}</div></div>`;
   }
-  const own = owner ? `<div class="owner" style="background:${owner.color}"></div><div class="owner-tok">${owner.token}</div>` : '';
-  return { cls, html: `${strip}${body}${own}` };
+  const own = owner ? `<div class="owner-badge" style="--pc:${owner.color}" title="Owned by ${esc(owner.name)}">${owner.token}</div>` : '';
+  const stamp = info && info.mortgaged ? '<div class="stamp">MORTGAGED</div>' : '';
+  return { cls, html: `${strip}${body}${own}${stamp}` };
 }
 
 // Dice: face n is placed with FACE_XF[n]; the cube shows n on top after rotateX/rotateY of SHOW[n].
@@ -190,10 +197,15 @@ function ensureBoard() {
     h += `<div class="cell" data-space="${sp.index}" style="grid-row:${r};grid-column:${c}"></div>`;
   }
   h += `<div class="center">
-      <div class="deck event"><i></i><i></i><i></i><i><b>📰</b>MARKET<br>EVENT</i></div>
-      <div class="deck treasury"><i></i><i></i><i></i><i><b>🏛️</b>TOWN<br>TREASURY</i></div>
-      <div class="felt-logo">MARGIN<span>CALL</span></div>
-      <div class="felt-sub">central bank · leverage · swaps</div>
+      <div class="spot event"></div><div class="spot treasury"></div>
+      <div class="deck event"><i></i><i></i><i></i><i><b>?</b>MARKET EVENT</i></div>
+      <div class="deck treasury"><i></i><i></i><i></i><i><b>§</b>TOWN TREASURY</i></div>
+      <div class="seal">
+        <div class="seal-top">Central Bank &amp; Exchange</div>
+        <div class="felt-logo">MARGIN CALL</div>
+        <div class="seal-rule"></div>
+        <div class="felt-sub">Property · Leverage · Swaps</div>
+      </div>
       <div class="dice-row">${dieSlot(0)}${dieSlot(1)}</div>
     </div>
     <div class="edge front"></div><div class="edge left"></div><div class="edge right"></div>
@@ -406,7 +418,7 @@ setInterval(() => {
 
 // ------------------------------------------------------------------ tabs
 const TABS = [
-  ['players', 'Players'], ['assets', 'My Assets'], ['bank', 'Central Bank'], ['economy', 'Economy'],
+  ['players', 'Players'], ['assets', 'My Assets'], ['bank', 'Central Bank'], ['desk', 'Bank Desk'], ['economy', 'Economy'],
   ['trades', 'Trades'], ['contracts', 'Contracts'], ['log', 'Log & Chat'],
 ];
 
@@ -421,7 +433,7 @@ function renderTabs() {
 }
 
 function renderTab() {
-  const fn = { players: tabPlayers, assets: tabAssets, bank: tabBank, economy: tabEconomy, trades: tabTrades, contracts: tabContracts, log: tabLog }[S.tab];
+  const fn = { players: tabPlayers, assets: tabAssets, bank: tabBank, desk: tabDesk, economy: tabEconomy, trades: tabTrades, contracts: tabContracts, log: tabLog }[S.tab];
   setHTML($('#tabBody'), fn());
   if (S.tab === 'economy') bindCharts();
 }
@@ -435,7 +447,7 @@ function tabPlayers() {
     const props = ownedBy(p.id);
     h += `<div class="pcard ${turn ? 'turn' : ''} ${p.bankrupt ? 'dead' : ''}" style="border-left-color:${p.color}">
       <div class="top"><span style="font-size:22px">${p.token}</span><span class="nm">${esc(p.name)}</span>
-        ${p.id === S.me ? '<span class="badge good">you</span>' : ''}${p.host ? '<span class="badge">host</span>' : ''}
+        ${p.id === S.me ? '<span class="badge good">you</span>' : ''}${p.bot ? '<span class="badge">AI</span>' : ''}${p.host ? '<span class="badge">host</span>' : ''}
         ${p.connected ? '' : '<span class="badge warn">offline</span>'}${p.inJail ? '<span class="badge warn">lockup</span>' : ''}
         ${p.marginCall && !p.bankrupt ? '<span class="badge bad">margin call</span>' : ''}${p.bankrupt ? '<span class="badge bad">bankrupt</span>' : ''}
         <span class="cash">${money(p.cash)}</span></div>
@@ -446,6 +458,9 @@ function tabPlayers() {
         <div><span>Bank debt</span>${money(p.bankDebt)}</div>
         <div><span>Mortgages</span>${money(p.mortgageDebt)}</div>
         <div><span>Leverage</span>${p.leverage == null ? '∞' : `${p.leverage.toFixed(2)}×`}</div>
+        <div><span>Share price</span>${s.desk.marks[p.id] ? `$${s.desk.marks[p.id].price.toFixed(2)}` : '—'}</div>
+        <div><span>Desk positions</span>${money(p.deskValue || 0)}</div>
+        <div><span>Default risk</span>${p.bankrupt ? '—' : pct((s.desk.hazards[p.id] || 0) * 100, 1)}</div>
       </div>
       <div class="chips">${props.map((i) => `<span class="chip ${s.spaceInfo[i].mortgaged ? 'm' : ''}" data-deed="${i}" title="${esc(space(i).name)}" style="background:${propColor(i)}"></span>`).join('')}${p.jailCards ? `<span class="badge">🎫×${p.jailCards}</span>` : ''}</div>
       ${me && me.host && p.id !== S.me && !p.bankrupt && s.status === 'playing' ? `<div class="row" style="justify-content:flex-end;margin-top:6px"><button class="small danger" data-act="kick" data-target="${p.id}" data-confirm="Remove ${esc(p.name)} from the game? Their assets return to the bank.">Remove player</button></div>` : ''}
@@ -474,7 +489,7 @@ function tabAssets() {
       if (info.houses > 0) acts.push(`<button class="small" data-act="sell" data-space="${i}">sell bldg +${plain$(info.houseCost / 2)}</button>`);
       if (!info.mortgaged && info.houses === 0) acts.push(`<button class="small" data-act="mortgage" data-space="${i}">mortgage +${plain$(info.mortgageValue)}</button>`);
       if (info.mortgaged) acts.push(`<button class="small" data-act="unmortgage" data-space="${i}">lift −${plain$(info.unmortgageCost)}</button>`);
-      const bld = info.houses === 5 ? '🏨 hotel' : info.houses ? `${'🏠'.repeat(info.houses)}` : '';
+      const bld = info.houses === 5 ? '<span class="mini-hotel" title="hotel"></span>' : '<span class="mini-house"></span>'.repeat(info.houses);
       h += `<div class="prop-row"><div class="sw" style="background:${propColor(i)}"></div>
         <div><a href="#" data-deed="${i}">${esc(sp.name)}</a> ${bld} ${info.mortgaged ? '<span class="badge warn">mortgaged</span>' : ''} ${info.encumbered ? '<span class="badge">pledged</span>' : ''}
         <div class="sub">value ${plain$(info.price)} · rent now ${info.rentNow != null ? plain$(info.rentNow) : '4×/10× dice'}</div></div>
@@ -502,23 +517,104 @@ function tabBank() {
   </div>${me.marginCall ? '<div class="alert warn" style="margin-top:8px">⚠ Margin call — repay bank debt or raise equity before ending your turn.</div>' : ''}</div>`;
   if (disabled) h += '<p class="muted">Central-bank borrowing is disabled in this game (leverage cap 1×).</p>';
   else {
-    h += `<div class="box"><h4>Borrow at a fixed rate</h4>
-      <div class="row"><input id="bankAmt" type="number" min="10" step="10" placeholder="amount" style="width:120px">
-      <select id="bankTerm">${[5, 10, 20].map((t) => `<option value="${t}">${t} rounds @ ${pct(me.quotes[t])}</option>`).join('')}</select>
+    h += `<div class="box"><h4>Borrow from the central bank</h4>
+      <div class="row"><input id="bankAmt" type="number" min="10" step="10" placeholder="amount" style="width:110px">
+      <select id="bankKind"><option value="floating">Floating</option><option value="fixed">Fixed</option></select>
+      <select id="bankTerm">${[5, 10, 20].map((t) => `<option value="${t}">${t} rounds</option>`).join('')}</select>
       <button class="small" data-bankmax>max</button><button class="primary" data-act="borrow">Borrow</button></div>
-      <p class="muted" style="font-size:12px;margin-bottom:0">Interest is charged every round at the rate locked today; principal is due at maturity. If you can't repay, the loan rolls over at the 5-round rate +2% penalty. Quotes include a credit spread of 0.5% per turn of leverage.</p></div>`;
+      <p class="muted" style="font-size:12px;margin-bottom:0"><b>Floating</b> loans pay the policy rate + 0.25% + your credit spread, reset every round. <b>Fixed</b> loans lock today's rate for the whole term but cost more up front. Principal is due at maturity; if you can't repay, the loan rolls over for 5 rounds at +2%. Credit spread = 0.5% per unit of leverage.</p></div>`;
   }
-  h += `<div class="box"><h4>Central-bank yield curve</h4><table class="t"><tr><th>Term</th><th class="n">Bank curve</th><th class="n">Your quote</th></tr>
-    ${[5, 10, 20].map((t) => `<tr><td>${t} rounds</td><td class="n">${pct(e.curve[t])}</td><td class="n">${pct(me.quotes[t])}</td></tr>`).join('')}</table>
-    <p class="muted" style="font-size:12px;margin-bottom:0">Short loans track today's policy rate (${pct(e.policyRate)}); long loans are anchored to the long-run neutral rate (${pct(e.neutralRate + e.inflationTarget)}). When the bank is hiking, long money is cheaper (inverted curve) — and lock in before rates rise!</p></div>`;
+  h += `<div class="box"><h4>Your rate quotes</h4><table class="t"><tr><th>Term</th><th class="n">Bank curve</th><th class="n">Floating now</th><th class="n">Fixed</th><th class="n">Lock-in cost</th></tr>
+    ${[5, 10, 20].map((t) => `<tr><td>${t} rounds</td><td class="n">${pct(e.curve[t])}</td><td class="n">${pct(me.floatQuotes[t])}</td><td class="n">${pct(me.quotes[t])}</td><td class="n">+${pct(me.quotes[t] - me.floatQuotes[t])}</td></tr>`).join('')}</table>
+    <p class="muted" style="font-size:12px;margin-bottom:0">Policy rate today: ${pct(e.policyRate)}. A fixed loan pays off if the policy rate rises more than the lock-in cost over the loan's life; floating wins if rates hold or fall.</p></div>`;
   h += '<div class="box"><h4>Your loans</h4>';
   if (!me.loans.length) h += '<p class="muted">No outstanding loans.</p>';
   else {
-    h += `<table class="t"><tr><th class="n">Principal</th><th class="n">Rate</th><th class="n">Interest/rd</th><th>Matures</th><th></th></tr>${me.loans.map((l) => `
-      <tr><td class="n">${plain$(l.principal)}</td><td class="n">${pct(l.rate)}</td><td class="n">${plain$(Math.max(1, Math.round(l.principal * l.rate / 100)))}</td><td>round ${l.maturity}</td>
+    h += `<table class="t"><tr><th class="n">Principal</th><th>Type</th><th class="n">Rate</th><th class="n">Interest/rd</th><th>Matures</th><th></th></tr>${me.loans.map((l) => `
+      <tr><td class="n">${plain$(l.principal)}</td><td>${l.kind === 'floating' ? 'floating' : 'fixed'}</td><td class="n">${pct(l.rate)}</td><td class="n">${plain$(Math.max(1, Math.round(l.principal * l.rate / 100)))}</td><td>round ${l.maturity}</td>
       <td><div class="row" style="flex-wrap:nowrap"><input id="rp-${l.id}" type="number" style="width:80px" placeholder="${l.principal}"><button class="small" data-act="repay" data-loan="${l.id}">repay</button></div></td></tr>`).join('')}</table>`;
   }
   h += '</div>';
+  return h;
+}
+
+// ------------------------------------------------------------------ bank desk
+const DESK_PRODUCTS = {
+  shares: 'Buy shares', call: 'Call option', put: 'Put option', cds: 'Credit default swap', insurance: 'Rent insurance', swap: 'Interest-rate swap',
+};
+S.dk = { product: 'shares', ref: null, shares: 10, strike: '', term: 10, notional: 500, deductible: 250, side: 'payFixed' };
+
+function deskQuote() {
+  const s = st(); const d = S.dk; const P = window.Pricing; const desk = s.desk;
+  const mark = d.ref && desk.marks[d.ref];
+  const n = Math.max(0, Math.floor(Number(d.shares) || 0));
+  switch (d.product) {
+    case 'shares': return mark ? `Cost ${plain$(P.shareAsk(mark.price, n))} for ${n} shares at $${mark.price.toFixed(2)} + 3% spread · sell back at $${(mark.price * 0.97).toFixed(2)}/share` : '';
+    case 'call': case 'put': {
+      if (!mark) return '';
+      const K = Number(d.strike || mark.price.toFixed(2));
+      const prem = P.optionPremium(d.product, mark.price, K, Number(d.term), s.econ.policyRate, mark.vol, n);
+      const be = d.product === 'call' ? K + prem / Math.max(1, n) : K - prem / Math.max(1, n);
+      return `Premium ${plain$(prem)} · strike $${K.toFixed(2)} vs price $${mark.price.toFixed(2)} · vol ${(mark.vol * 100).toFixed(0)}%/round · breakeven $${be.toFixed(2)}/share`;
+    }
+    case 'cds': return d.ref ? `Premium ${plain$(P.cdsPremium(Number(d.notional) || 0, desk.hazards[d.ref]))} per round (first one now) · pays ${plain$(Number(d.notional) || 0)} if ${esc(pl(d.ref).name)} goes bankrupt · est. default risk ${(desk.hazards[d.ref] * 100).toFixed(1)}%/round` : '';
+    case 'insurance': { const q = desk.insurance[S.me] && desk.insurance[S.me][d.deductible]; return `Premium ${plain$(q || 0)} per round (first one now) · covers 80% of any rent above ${plain$(d.deductible)}, up to $1,500 a claim`; }
+    case 'swap': {
+      const fx = desk.swapRates[d.term][d.side]; const net = Math.round((Number(d.notional) || 0) * (s.econ.policyRate - fx) * (d.side === 'payFixed' ? 1 : -1) / 100);
+      return `${d.side === 'payFixed' ? 'You pay' : 'You receive'} fixed ${pct(fx)} and ${d.side === 'payFixed' ? 'receive' : 'pay'} the policy rate (${pct(s.econ.policyRate)}) on ${plain$(Number(d.notional) || 0)} · net today ${net >= 0 ? '+' : ''}${plain$(net)}/round`;
+    }
+    default: return '';
+  }
+}
+
+function tabDesk() {
+  const s = st(); const me = meP(); const desk = s.desk;
+  if (!me) return '';
+  const rivals = s.players.filter((p) => !p.bankrupt && p.id !== S.me);
+  if (!S.dk.ref || !rivals.some((p) => p.id === S.dk.ref)) S.dk.ref = rivals[0]?.id || null;
+  const d = S.dk;
+  let h = `<p class="muted" style="font-size:12.5px;margin-top:0">Trade with the central bank's desk. Each player's balance sheet is split into 100 shares priced at <b>book equity ÷ 100</b>, re-marked at the start of every round.</p>`;
+  h += `<div class="box"><h4>Equity board</h4><table class="t"><tr><th>Player</th><th class="n">Price</th><th class="n">Δ round</th><th class="n">Vol</th><th class="n">Default risk</th></tr>
+    ${s.players.map((p) => { const m = desk.marks[p.id]; if (!m) return ''; const prev = m.history.length > 1 ? m.history[m.history.length - 2] : m.price; const ch = prev ? (m.price / prev - 1) * 100 : 0;
+      return `<tr class="${p.bankrupt ? 'dead' : ''}"><td>${p.token} ${esc(p.name)}</td><td class="n">$${m.price.toFixed(2)}</td><td class="n ${ch > 0 ? 'pos' : ch < 0 ? 'neg' : ''}">${ch >= 0 ? '+' : ''}${ch.toFixed(1)}%</td><td class="n">${(m.vol * 100).toFixed(0)}%</td><td class="n">${p.bankrupt ? 'defaulted' : pct((desk.hazards[p.id] || 0) * 100, 1)}</td></tr>`; }).join('')}</table></div>`;
+  const needsRef = ['shares', 'call', 'put', 'cds'].includes(d.product);
+  const f = [];
+  f.push(`<label>Product<select id="dkProduct">${Object.entries(DESK_PRODUCTS).map(([k, l]) => `<option value="${k}" ${d.product === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label>`);
+  if (needsRef) f.push(`<label>On player<select id="dkRef">${rivals.map((p) => `<option value="${p.id}" ${d.ref === p.id ? 'selected' : ''}>${p.token} ${esc(p.name)}</option>`).join('')}</select></label>`);
+  if (['shares', 'call', 'put'].includes(d.product)) f.push(`<label>Shares (max 50)<input id="dkShares" type="number" min="1" max="50" value="${d.shares}"></label>`);
+  if (['call', 'put'].includes(d.product)) f.push(`<label>Strike $/share<input id="dkStrike" type="number" min="0" step="0.5" placeholder="${desk.marks[d.ref] ? desk.marks[d.ref].price.toFixed(2) : ''}" value="${d.strike}"></label>`);
+  if (['cds', 'swap'].includes(d.product)) f.push(`<label>Notional $<input id="dkNotional" type="number" min="50" step="50" value="${d.notional}"></label>`);
+  if (d.product === 'swap') f.push(`<label>Side<select id="dkSide"><option value="payFixed" ${d.side === 'payFixed' ? 'selected' : ''}>Pay fixed, receive floating</option><option value="receiveFixed" ${d.side === 'receiveFixed' ? 'selected' : ''}>Receive fixed, pay floating</option></select></label>`);
+  if (d.product === 'insurance') f.push(`<label>Deductible<select id="dkDeductible">${[100, 250, 500].map((x) => `<option value="${x}" ${Number(d.deductible) === x ? 'selected' : ''}>$${x}</option>`).join('')}</select></label>`);
+  if (d.product !== 'shares') f.push(`<label>Term<select id="dkTerm">${[5, 10, 20].map((t) => `<option value="${t}" ${Number(d.term) === t ? 'selected' : ''}>${t} rounds</option>`).join('')}</select></label>`);
+  const help = {
+    shares: 'Bet that a rival\'s equity grows. Buy at the round\'s mark + 3%, sell any time at the mark − 3%. Worthless if they go bankrupt.',
+    call: 'Right to cash in (price − strike) × shares at any time before expiry. Priced with Black-Scholes using the player\'s own volatility.',
+    put: 'Pays (strike − price) × shares. A bankruptcy pays the full strike, so it doubles as protection.',
+    cds: 'Credit protection: pay a premium each round; the bank pays the notional if that player goes bankrupt.',
+    insurance: 'Insure yourself against a ruinous rent bill. Priced from the rents on the board right now — buy before the hotels go up.',
+    swap: 'Bet on (or hedge) the policy rate. Settled every round against the policy rate; close early at mark-to-market − 1%.',
+  }[d.product];
+  h += `<div class="box"><h4>New order</h4><div class="fields-grid">${f.join('')}</div>
+    <p class="muted" style="font-size:12px">${help}</p>
+    <div class="quote" id="dkQuote">${deskQuote()}</div>
+    <div class="row end" style="margin-top:8px"><button class="primary" data-act="deskBuy" ${needsRef && !d.ref ? 'disabled' : ''}>Place order</button></div></div>`;
+  const mine = desk.positions.filter((x) => x.holder === S.me);
+  h += '<div class="box"><h4>Your desk positions</h4>';
+  if (!mine.length) h += '<p class="muted">None.</p>';
+  else {
+    h += `<table class="t"><tr><th>Position</th><th class="n">Value / flow</th><th></th></tr>${mine.map((x) => {
+      const m = x.ref && desk.marks[x.ref]; const ref = x.ref ? `${pl(x.ref).token} ${esc(pl(x.ref).name)}` : '';
+      let desc = ''; let val = ''; let btn = 'close';
+      if (x.type === 'shares') { desc = `${x.shares} shares of ${ref} (cost ${plain$(x.cost)})`; val = plain$(Math.floor(m.price * x.shares * 0.97)); btn = 'sell'; }
+      if (x.type === 'call' || x.type === 'put') { const iv = Math.round(x.shares * Math.max(0, x.type === 'call' ? m.price - x.strike : x.strike - m.price)); desc = `${x.type} · ${x.shares} × ${ref} @ $${x.strike} · exp. R${x.expiry}`; val = plain$(iv); btn = iv > 0 ? 'exercise' : 'abandon'; }
+      if (x.type === 'cds') { desc = `CDS on ${ref} · ${plain$(x.notional)} · exp. R${x.expiry}`; val = `−${plain$(x.premium)}/rd`; btn = 'cancel'; }
+      if (x.type === 'insurance') { desc = `Rent insurance · $${x.deductible} deductible · exp. R${x.expiry}`; val = `−${plain$(x.premium)}/rd`; btn = 'cancel'; }
+      if (x.type === 'swap') { const net = Math.round(x.notional * (s.econ.policyRate - x.fixed) * (x.side === 'payFixed' ? 1 : -1) / 100); desc = `${x.side === 'payFixed' ? 'Pay' : 'Receive'} fixed ${pct(x.fixed)} on ${plain$(x.notional)} · exp. R${x.expiry}`; val = `${net >= 0 ? '+' : ''}${plain$(net)}/rd`; }
+      return `<tr><td>${desc}</td><td class="n">${val}</td><td><button class="small" data-act="deskClose" data-id="${x.id}" ${btn === 'cancel' || btn === 'abandon' ? `data-confirm="${btn === 'cancel' ? 'Cancel this policy? Premiums are not refunded.' : 'Abandon this option? It is out of the money.'}"` : ''}>${btn}</button></td></tr>`;
+    }).join('')}</table>`;
+  }
+  h += `</div><p class="muted" style="font-size:12px">Bank desk P&L so far: ${money(desk.pnl)} · open positions across all players: ${desk.positions.length}. Desk positions count toward net worth (shares at the sell price, options at intrinsic value, swaps at mark-to-market) but not toward your borrowing limit.</p>`;
   return h;
 }
 
@@ -559,12 +655,12 @@ function lineSVG(key, hist, fmt) {
   const X = (i) => P + (i / (hist.length - 1)) * (W - 2 * P);
   const Y = (v) => H - P - ((v - lo) / (hi - lo)) * (H - 2 * P);
   const d = vals.map((v, i) => `${i ? 'L' : 'M'}${X(i).toFixed(1)},${Y(v).toFixed(1)}`).join('');
-  const zero = lo < 0 && hi > 0 ? `<line x1="${P}" x2="${W - P}" y1="${Y(0)}" y2="${Y(0)}" stroke="#3a4766" stroke-dasharray="3 3"/>` : '';
+  const zero = lo < 0 && hi > 0 ? `<line x1="${P}" x2="${W - P}" y1="${Y(0)}" y2="${Y(0)}" stroke="var(--line)" stroke-dasharray="3 3"/>` : '';
   S.charts[key] = { pts: hist.map((x, i) => ({ x: X(i), y: Y(x[key]), label: `Round ${x.round}: ${fmt(x[key])}` })), W };
   return `<svg viewBox="0 0 ${W} ${H}" data-chart="${key}" preserveAspectRatio="none">
-    <line x1="${P}" x2="${W - P}" y1="${H - P}" y2="${H - P}" stroke="#26324f"/>${zero}
-    <path d="${d}" fill="none" stroke="#39d0c0" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/>
-    <line class="xh" x1="0" x2="0" y1="${P}" y2="${H - P}" stroke="#8d99b6" stroke-width="1" vector-effect="non-scaling-stroke" visibility="hidden"/>
+    <line x1="${P}" x2="${W - P}" y1="${H - P}" y2="${H - P}" stroke="var(--line)"/>${zero}
+    <path d="${d}" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/>
+    <line class="xh" x1="0" x2="0" y1="${P}" y2="${H - P}" stroke="var(--muted)" stroke-width="1" vector-effect="non-scaling-stroke" visibility="hidden"/>
     <rect x="0" y="0" width="${W}" height="${H}" fill="transparent"/></svg>`;
 }
 
@@ -856,24 +952,35 @@ function openDeed(i) {
   if (!s || s.status === 'lobby' || !ownable(sp)) return;
   const info = s.spaceInfo[i];
   const owner = info.owner ? pl(info.owner) : null;
-  const col = propColor(i);
-  let rows = '';
+  const col = sp.type === 'street' ? propColor(i) : '#f4eedc';
+  const line = (a, b) => `<div class="dl"><span>${a}</span><span>${b}</span></div>`;
+  let body = '';
   if (sp.type === 'street') {
     const r = info.rentTable;
-    rows = `<span>Rent</span><span>${plain$(r[0])}</span><span>Rent with full set</span><span>${plain$(r[0] * 2)}</span>
-      ${[1, 2, 3, 4].map((k) => `<span>With ${k} house${k > 1 ? 's' : ''}</span><span>${plain$(r[k])}</span>`).join('')}<span>With hotel</span><span>${plain$(r[5])}</span>
-      <span>Building cost</span><span>${plain$(info.houseCost)} each</span>`;
-  } else if (sp.type === 'transit') rows = [1, 2, 3, 4].map((k) => `<span>Own ${k} hub${k > 1 ? 's' : ''}</span><span>${plain$(Math.round(25 * 2 ** (k - 1) * s.econ.priceLevel))}</span>`).join('');
-  else rows = '<span>Own 1 utility</span><span>4 × dice</span><span>Own both</span><span>10 × dice</span>';
-  openModal(`<div class="deed"><div class="hd" style="background:${col}">${sp.type === 'street' ? `<small>${esc(groupOf(i).name)}</small>` : ''}${esc(sp.name)}</div>
-    <div class="bd"><div class="kv">${rows}
-      <span class="tot">Price today</span><span class="tot">${plain$(info.price)}</span>
-      <span>Mortgage value</span><span>${plain$(info.mortgageValue)}</span>
+    body = `<div class="rent-main">RENT ${plain$(r[0])}</div>
+      ${line('With 1 House', plain$(r[1]))}${line('With 2 Houses', plain$(r[2]))}${line('With 3 Houses', plain$(r[3]))}${line('With 4 Houses', plain$(r[4]))}${line('With HOTEL', plain$(r[5]))}
+      <div class="dfine">Mortgage Value ${plain$(info.mortgageValue)}<br>Houses cost ${plain$(info.houseCost)} each<br>Hotels, ${plain$(info.houseCost)} plus 4 houses</div>
+      <div class="dfine small">If a player owns ALL the lots of any colour group, the rent is doubled on unimproved lots in that group.</div>`;
+  } else if (sp.type === 'transit') {
+    body = `<div class="deed-ico">${transitIcon(sp.name)}</div>${[1, 2, 3, 4].map((k) => line(k === 1 ? 'Rent' : `If ${k} hubs are owned`, plain$(Math.round(25 * 2 ** (k - 1) * s.econ.priceLevel)))).join('')}
+      <div class="dfine">Mortgage Value ${plain$(info.mortgageValue)}</div>`;
+  } else {
+    body = `<div class="deed-ico">${utilIcon(sp.name)}</div><div class="dfine">If one utility is owned, rent is 4 times the amount shown on the dice.<br><br>If both utilities are owned, rent is 10 times the amount shown on the dice.</div>
+      <div class="dfine">Mortgage Value ${plain$(info.mortgageValue)}</div>`;
+  }
+  openModal(`<div class="deed-wrap"><div class="deed2">
+      <div class="dh ${sp.type === 'street' ? '' : 'plain'}" style="--c:${col}"><small>TITLE DEED</small><b>${esc(sp.name)}</b></div>
+      <div class="db">${body}</div>
+    </div>
+    <div class="deed-meta kv">
+      <span>Price today</span><span>${plain$(info.price)}</span>
       <span>Owner</span><span>${owner ? `${owner.token} ${esc(owner.name)}` : 'Bank (for sale)'}</span>
+      ${sp.type === 'street' ? `<span>Colour group</span><span>${esc(groupOf(i).name)}</span>` : ''}
       ${info.mortgaged ? `<span>Status</span><span class="neg">Mortgaged (${plain$(info.mortgageAmt)})</span>` : ''}
       ${info.houses ? `<span>Buildings</span><span>${info.houses === 5 ? 'hotel' : `${info.houses} house(s)`}</span>` : ''}
       ${info.encumbered ? '<span>Contracts</span><span>pledged / under option</span>' : ''}
-    </div><p class="muted" style="font-size:12px;margin-bottom:0">All prices & rents scale with the price level (${s.econ.priceLevel.toFixed(3)}).</p></div></div>`);
+      <span>Price level</span><span>${s.econ.priceLevel.toFixed(3)} (scales all amounts)</span>
+    </div></div>`);
 }
 
 const RULES_HTML = `<div class="rules"><h2>How to play Margin Call</h2>
@@ -891,8 +998,8 @@ const RULES_HTML = `<div class="rules"><h2>How to play Margin Call</h2>
 </ul>
 <h3>The central bank</h3>
 <ul>
-<li>Borrow any time at a <b>fixed rate locked when you borrow</b>, for 5, 10 or 20 rounds. Interest is charged each round; principal is due at maturity (or rolls over at a penalty rate).</li>
-<li>Your quote = the bank's yield curve for that term + a <b>credit spread</b> of 0.5% per unit of leverage.</li>
+<li>Borrow any time for 5, 10 or 20 rounds, <b>floating</b> (policy rate + 0.25%, reset every round) or <b>fixed</b> (locked for the term, always quoted above floating). Interest is charged each round; principal is due at maturity (or rolls over at a penalty rate).</li>
+<li>Every quote adds a <b>credit spread</b> of 0.5% per unit of leverage.</li>
 <li>Borrowing is capped so that <b>assets ÷ equity ≤ the leverage cap</b>. If losses push you over the cap you get a <b>margin call</b>: fix it before you end your turn or the bank seizes cash, sells buildings and mortgages property to pay down your loans.</li>
 </ul>
 <h3>The economy</h3>
@@ -907,7 +1014,14 @@ const RULES_HTML = `<div class="rules"><h2>How to play Margin Call</h2>
 <li>Templates: <b>bond</b>, <b>secured loan</b>, <b>interest-rate swap</b>, <b>rent swap</b>, <b>equity investment</b>, <b>call</b>, <b>put</b>, <b>credit default swap</b>.</li>
 <li>Periodic legs are netted and settled at the start of every round. Miss a payment with collateral pledged and you <b>default</b> — the collateral transfers. When a party goes bankrupt their collateral transfers, CDS contracts on them pay out, and their other contracts are void.</li>
 <li>Options are exercised from the Contracts tab; any buildings in that colour group are sold to the bank first.</li>
-</ul></div>`;
+</ul>
+<h3>The bank desk</h3>
+<ul>
+<li>Trade with the central bank as counterparty: <b>shares</b> in rivals (100 shares each, priced at book equity ÷ 100, re-marked every round, 3% spread), <b>calls and puts</b> on those shares (Black-Scholes), <b>credit default swaps</b> on a rival going bankrupt, <b>rent insurance</b> (80% of any rent above your deductible) and <b>interest-rate swaps</b> against the policy rate.</li>
+<li>You can't trade instruments on yourself. Desk positions count toward net worth but not toward your borrowing limit.</li>
+</ul>
+<h3>AI players</h3>
+<ul><li>The host can add AI players in the lobby. They play by exactly the same rules, trade, bid, build, borrow and use the bank desk.</li></ul></div>`;
 
 // ------------------------------------------------------------------ events
 document.addEventListener('click', (ev) => {
@@ -931,13 +1045,28 @@ document.addEventListener('click', (ev) => {
     if (t.dataset.clause) extra.clause = Number(t.dataset.clause);
     if (t.dataset.target) extra.target = t.dataset.target;
     if (a === 'bid') { extra.amount = Number($('#bidAmt').value); if (!extra.amount) return toast('Enter a bid', 'err'); $('#bidAmt').value = ''; }
-    if (a === 'borrow') { extra.amount = Number($('#bankAmt').value); extra.term = Number($('#bankTerm').value); if (!extra.amount) return toast('Enter an amount', 'err'); $('#bankAmt').value = ''; }
+    if (a === 'borrow') { extra.amount = Number($('#bankAmt').value); extra.term = Number($('#bankTerm').value); extra.kind = $('#bankKind').value; if (!extra.amount) return toast('Enter an amount', 'err'); $('#bankAmt').value = ''; }
+    if (a === 'deskBuy') {
+      const d = S.dk; const m = d.ref && st().desk.marks[d.ref];
+      extra.order = { product: d.product, ref: d.ref, shares: Number(d.shares), strike: d.strike === '' && m ? m.price : Number(d.strike), term: Number(d.term), notional: Number(d.notional), deductible: Number(d.deductible), side: d.side };
+    }
     if (a === 'repay') { extra.loanId = t.dataset.loan; const inp = $(`#rp-${CSS.escape(t.dataset.loan)}`); extra.amount = Number(inp.value) || Number(inp.placeholder); inp.value = ''; }
     act(a, extra);
     return;
   }
   if (t.dataset.space !== undefined && t.classList.contains('cell')) openDeed(Number(t.dataset.space));
 });
+// Bank-desk order form: keep its state in S.dk; re-render on structural changes, refresh the quote while typing.
+const DK_FIELDS = { dkProduct: 'product', dkRef: 'ref', dkShares: 'shares', dkStrike: 'strike', dkTerm: 'term', dkNotional: 'notional', dkDeductible: 'deductible', dkSide: 'side' };
+const onDeskField = (ev) => {
+  const k = DK_FIELDS[ev.target.id];
+  if (!k) return;
+  S.dk[k] = ev.target.value;
+  if (ev.type === 'change' && ev.target.tagName === 'SELECT') { if (k === 'product' || k === 'ref') S.dk.strike = ''; renderTab(); } else { const q = $('#dkQuote'); if (q) q.innerHTML = deskQuote(); }
+};
+document.addEventListener('input', onDeskField);
+document.addEventListener('change', onDeskField);
+
 document.addEventListener('keydown', (ev) => {
   if (ev.key === 'Escape') closeModal();
   if (ev.key === 'Enter' && ev.target.id === 'chatIn') $('[data-chat]').click();

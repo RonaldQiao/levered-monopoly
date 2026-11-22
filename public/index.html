@@ -5,6 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Margin Call</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📈</text></svg>">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700;800&family=Inter:wght@400;500;600;700&display=swap">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -12,7 +14,7 @@
   <section id="join" class="screen">
     <div class="join-card">
       <h1 class="logo">MARGIN<span>CALL</span></h1>
-      <p class="tagline">A property-trading board game with a central bank, leverage, swaps and options.</p>
+      <p class="tagline">The classic property-trading game, with a central bank, leverage, swaps and options.</p>
       <label>Your name <input id="nameInput" maxlength="20" placeholder="e.g. Ada" autocomplete="off"></label>
       <button id="createBtn" class="primary big">Create a new room</button>
       <div class="or">or join a friend's room</div>
@@ -69,6 +71,7 @@
   <div id="toasts" class="toasts"></div>
   <div id="tooltip" class="tooltip hidden"></div>
 
+  <script src="pricing.js"></script>
   <script src="client.js"></script>
 </body>
 </html>

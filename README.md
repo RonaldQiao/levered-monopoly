@@ -40,7 +40,9 @@ npm test             # rules engine tests + randomised full-game fuzzing
 
 ## The central bank (leverage)
 
-- **Fixed-rate loans.** Borrow any time for 5, 10 or 20 rounds. The rate is locked at origination. Interest is charged every round and principal is due at maturity. If you can't repay, the loan rolls over for 5 rounds at the current rate +2% penalty.
+- **Fixed or floating loans.** Borrow any time for 5, 10 or 20 rounds. Interest is charged every round and principal is due at maturity. If you can't repay, the loan rolls over for 5 rounds at +2%.
+  - **Floating:** policy rate + 0.25% + credit spread, reset every round.
+  - **Fixed:** max(yield curve, floating base) + a lock-in premium (0.25% / 0.35% / 0.5% for 5 / 10 / 20 rounds) + credit spread. Locked for the term, and always more expensive than floating at signing.
 - **Yield curve.** `rate(term) = w·policy + (1−w)·(neutral + target inflation) + term premium`, where `w = 5/term`. Short money tracks the policy rate and long money is anchored, so the curve inverts when the bank is hiking.
 - **Credit spread.** +0.5% per unit of leverage (assets ÷ equity) after the new loan.
 - **Leverage cap.** Bank debt ≤ (cap − 1) × book equity. The host picks the cap in the lobby: 1× disables borrowing, 3× is the default.
@@ -68,6 +70,33 @@ The **price level** scales property prices, building costs, rents, salary, taxes
 amounts. Loans and contracts stay **nominal**: inflation erodes debt, which rewards borrowers
 and hurts lenders, and deflation does the reverse. Some cards are macro shocks: rate hikes and
 cuts, an oil shock, a tech boom, austerity, or fiscal stimulus.
+
+## The bank desk
+
+Players can trade instruments with the central bank as counterparty (Bank Desk tab). You can't trade instruments on yourself.
+
+| Product | How it works |
+|---|---|
+| Shares | Each player is split into 100 shares priced at book equity ÷ 100, re-marked at the start of every round. Buy at the mark + 3%, sell at the mark − 3%. Max 50 shares of one player. Worthless if they go bankrupt |
+| Call / put options | On a rival's shares, any strike, 5/10/20 rounds. Premium = Black-Scholes using that player's measured volatility, + 15%. Cash-settled any time; auto-exercised at expiry. A put pays the full strike if the player goes bankrupt |
+| Credit default swap | Pay a premium every round; the bank pays the notional if the named player goes bankrupt. Premium = notional × default risk × 1.3, where default risk comes from leverage, cash and the worst rent on the board |
+| Rent insurance | Pay a premium every round; the bank pays 80% of any single rent above your deductible ($100/$250/$500), up to $1,500. Priced from the rents on the board when you buy |
+| Rate swap | Pay fixed and receive the policy rate (or the reverse) on a notional, settled every round. Close early at mark-to-market − 1% |
+
+Desk positions count toward net worth but not toward your borrowing limit. Share prices are re-marked only once a round, so a single trade can't pump a price.
+
+## AI players
+
+The host can add up to 7 AI players in the lobby. They act through the same rule engine as humans:
+- value property by its role in colour groups and how often each space is landed on
+- keep a cash reserve sized to the rents ahead of them
+- build where the return is best and borrow to build when that return beats the loan rate
+- hold at four houses when the bank runs short
+- bid to their valuation in auctions and haggle for set-completing trades
+- price contracts by discounted cash flows and counterparty risk
+- buy rent insurance when the board turns dangerous
+
+In tests, two AI players beat two casual players in 23 of 24 four-player games.
 
 ## Player-to-player financial contracts
 
@@ -102,6 +131,9 @@ server.js          HTTP + WebSocket server, rooms, reconnection
 src/board.js       board data
 src/cards.js       card decks
 src/engine.js      authoritative rules engine (traditional rules, central bank, economy, contracts)
+src/desk.js        bank desk (shares, options, CDS, insurance, swaps)
+src/pricing.js     shared pricing (Black-Scholes etc.), used by server and browser
+src/bot.js         AI players
 public/            browser client (vanilla JS, no build step)
 test/              node:test suite incl. randomised full-game fuzzing
 ```
