@@ -133,28 +133,34 @@ function renderLobby() {
   $('#startBtn').textContent = host ? (s.players.length < 2 ? 'Need 2+ players' : 'Start game') : 'Waiting for host…';
 }
 
-// ------------------------------------------------------------------ board
+// ------------------------------------------------------------------ board (CSS 3D)
+// The board is a CSS 3D scene: a tilted slab with thickness, standing pawns that hop
+// space-to-space, extruded houses/hotels, and tumbling dice cubes. The board is built
+// once and patched in place so animations survive state broadcasts.
+const TRACKS = [1.45, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1.45];
+const TRACK_SUM = TRACKS.reduce((a, b) => a + b, 0);
+const trackCenter = (k) => ((TRACKS.slice(0, k - 1).reduce((a, b) => a + b, 0) + TRACKS[k - 1] / 2) / TRACK_SUM) * 100;
+
 function gridPos(i) {
   if (i <= 10) return [11, 11 - i, i === 0 || i === 10 ? 'corner' : 'side-bottom'];
   if (i <= 20) return [11 - (i - 10), 1, i === 20 ? 'corner' : 'side-left'];
   if (i <= 30) return [1, 1 + (i - 20), i === 30 ? 'corner' : 'side-top'];
   return [1 + (i - 30), 11, 'side-right'];
 }
+const cellCenter = (i) => { const [r, c] = gridPos(i); return [trackCenter(c), trackCenter(r)]; };
 
-function cellHTML(sp) {
+const BLOCK = '<i class="tp"></i><i class="fr"></i><i class="lf"></i><i class="rt"></i>';
+const buildingsHTML = (n) => (n === 5 ? `<div class="blk hotel">${BLOCK}</div>` : `<div class="blk house">${BLOCK}</div>`.repeat(n));
+
+function cellParts(sp) {
   const s = st(); const i = sp.index; const info = s.spaceInfo[i];
-  const [r, c, side] = gridPos(i);
-  const here = s.players.filter((p) => !p.bankrupt && p.pos === i);
-  const toks = here.length ? `<div class="tokens">${here.map((p) => `<div class="tok ${p.id === S.me ? 'me' : ''}" style="border-color:${p.color}" title="${esc(p.name)}">${p.token}</div>`).join('')}</div>` : '';
+  const side = gridPos(i)[2];
   let cls = `cell ${side}`; let strip = ''; let body = '';
-  if (sp.type === 'street') {
-    const g = S.board.groups[sp.group];
-    const bld = info.houses === 5 ? '<div class="hotel"></div>' : '<div class="house"></div>'.repeat(info.houses);
-    strip = `<div class="strip" style="background:${g.color}">${bld}</div>`;
-  }
+  if (sp.type === 'street') strip = `<div class="strip" style="--c:${S.board.groups[sp.group].color}">${buildingsHTML(info.houses)}</div>`;
   const owner = info && info.owner ? pl(info.owner) : null;
   if (info && info.mortgaged) cls += ' mortgaged';
   if (side === 'corner') {
+    cls += ` corner-${sp.type}`;
     const label = sp.type === 'jail' ? 'LOCKUP<br><small class="muted">just visiting</small>' : esc(sp.name);
     body = `<div class="body"><div class="ico">${ICONS[sp.type]}</div><div class="nm">${label}</div>${sp.type === 'go' ? `<div class="pr">collect ${plain$(s.econ.salary)}</div>` : ''}</div>`;
   } else {
@@ -165,46 +171,152 @@ function cellHTML(sp) {
     body = `<div class="body"><div class="nm">${esc(sp.name)}</div>${ico && sp.type !== 'street' ? `<div class="ico">${ico}</div>` : ''}<div class="pr">${sub}</div></div>`;
   }
   const own = owner ? `<div class="owner" style="background:${owner.color}"></div><div class="owner-tok">${owner.token}</div>` : '';
-  return `<div class="${cls}" data-space="${i}" style="grid-row:${r};grid-column:${c}">${strip}${body}${own}${toks}</div>`;
+  return { cls, html: `${strip}${body}${own}` };
 }
 
+// Dice: face n is placed with FACE_XF[n]; the cube shows n on top after rotateX/rotateY of SHOW[n].
 const PIPS = { 1: [4], 2: [0, 8], 3: [0, 4, 8], 4: [0, 2, 6, 8], 5: [0, 2, 4, 6, 8], 6: [0, 2, 3, 5, 6, 8] };
-const dieHTML = (n, anim) => `<div class="die ${anim ? 'roll' : ''}">${Array.from({ length: 9 }, (_, k) => `<i style="${PIPS[n].includes(k) ? '' : 'visibility:hidden'}"></i>`).join('')}</div>`;
+const FACE_XF = { 1: 'rotateY(0deg)', 6: 'rotateY(180deg)', 2: 'rotateY(90deg)', 5: 'rotateY(-90deg)', 3: 'rotateX(90deg)', 4: 'rotateX(-90deg)' };
+const SHOW = { 1: [0, 0], 6: [0, 180], 2: [0, -90], 5: [0, 90], 3: [-90, 0], 4: [90, 0] };
+const faceHTML = (n) => `<div class="face" style="transform:${FACE_XF[n]} translateZ(var(--h))">${Array.from({ length: 9 }, (_, k) => `<i${PIPS[n].includes(k) ? '' : ' class="off"'}></i>`).join('')}</div>`;
+const dieSlot = (k) => `<div class="dslot"><div class="dshadow"></div><div class="die3d" id="die${k}"><div class="cube">${[1, 2, 3, 4, 5, 6].map(faceHTML).join('')}</div></div></div>`;
 
-function centerHTML() {
-  const s = st(); const e = s.econ; const me = meP(); const cur = s.players[s.turn.idx];
-  const newRoll = s.lastRoll && s.lastRoll.seq !== S.lastRollSeq;
-  const dice = s.lastRoll ? s.lastRoll.dice : [1, 1];
-  const heatLbl = e.heat < 30 ? 'cold' : e.heat > 70 ? 'hot' : 'steady';
-  let h = `<h1 class="logo">MARGIN<span>CALL</span></h1>
-  <div class="ticker">
-    <div class="tick"><small>Round</small><b>${s.round}</b></div>
-    <div class="tick"><small>Policy rate</small><b>${pct(e.policyRate)}</b></div>
-    <div class="tick"><small>Inflation</small><b>${pct(e.inflation)}</b></div>
-    <div class="tick"><small>Heat</small><b>${Math.round(e.heat)} · ${heatLbl}</b></div>
-    <div class="tick"><small>Price level</small><b>${e.priceLevel.toFixed(3)}</b></div>
-    <div class="tick"><small>Fiscal</small><b>${e.fiscal}</b></div>
-  </div>`;
-  if (s.status === 'finished') {
-    const w = s.winner && pl(s.winner);
-    h += `<div class="turn-banner">🏆 ${w ? `${w.token} ${esc(w.name)} wins!` : 'Game over'}</div>`;
-    h += `<table class="t" style="max-width:420px"><tr><th>Player</th><th class="n">Net worth</th></tr>${s.players.slice().sort((a, b) => b.netWorth - a.netWorth).map((p) => `<tr><td>${p.token} ${esc(p.name)}${p.bankrupt ? ' ☠' : ''}</td><td class="n">${money(p.netWorth)}</td></tr>`).join('')}</table>`;
-    return h;
+function ensureBoard() {
+  const board = $('#board');
+  if (board.dataset.built) return board;
+  let h = '';
+  for (const sp of S.board.spaces) {
+    const [r, c] = gridPos(sp.index);
+    h += `<div class="cell" data-space="${sp.index}" style="grid-row:${r};grid-column:${c}"></div>`;
   }
-  h += `<div class="turn-banner"><span class="tok" style="border-color:${cur.color}">${cur.token}</span>${cur.id === S.me ? 'Your turn' : `${esc(cur.name)}'s turn`} <span class="muted" style="font-weight:400;font-size:13px">· ${phaseLabel(s.turn.phase, cur)}</span></div>`;
-  h += `<div class="dice">${dieHTML(dice[0], newRoll)}${dieHTML(dice[1], newRoll)}</div>`;
+  h += `<div class="center">
+      <div class="deck event"><i></i><i></i><i></i><i><b>📰</b>MARKET<br>EVENT</i></div>
+      <div class="deck treasury"><i></i><i></i><i></i><i><b>🏛️</b>TOWN<br>TREASURY</i></div>
+      <div class="felt-logo">MARGIN<span>CALL</span></div>
+      <div class="felt-sub">central bank · leverage · swaps</div>
+      <div class="dice-row">${dieSlot(0)}${dieSlot(1)}</div>
+    </div>
+    <div class="edge front"></div><div class="edge left"></div><div class="edge right"></div>
+    <div class="pawns" id="pawns"></div>`;
+  board.innerHTML = h;
+  board.dataset.built = '1';
+  S.cellCache = {}; S.disp = {}; S.target = {}; S.anim = {};
+  setDice([3, 4], false);
+  return board;
+}
+
+function setDice(vals, animate) {
+  vals.forEach((v, k) => {
+    const die = $(`#die${k}`); if (!die) return;
+    const cube = die.firstElementChild;
+    const [ax, ay] = SHOW[v];
+    const rz = (k ? 9 : -7) + Math.round(Math.random() * 24 - 12);
+    const spin = (n) => (Math.random() < 0.5 ? -1 : 1) * 360 * n;
+    cube.style.setProperty('--rx1', `${ax}deg`); cube.style.setProperty('--ry1', `${ay}deg`); cube.style.setProperty('--rz1', `${rz}deg`);
+    cube.style.setProperty('--rx0', `${ax + spin(2)}deg`); cube.style.setProperty('--ry0', `${ay + spin(1)}deg`); cube.style.setProperty('--rz0', `${rz + spin(1) / 2}deg`);
+    if (animate) { die.classList.remove('tumble'); void die.offsetWidth; die.classList.add('tumble'); }
+  });
+}
+
+function placePawns() {
+  const groups = {};
+  for (const el of $$('#pawns .pawn')) (groups[S.disp[el.dataset.pid]] ||= []).push(el);
+  for (const [pos, els] of Object.entries(groups)) {
+    const [x, y] = cellCenter(Number(pos));
+    const cols = Math.min(els.length, 3); const rows = Math.ceil(els.length / 3);
+    els.forEach((el, k) => {
+      const dx = ((k % 3) - (cols - 1) / 2) * 2.3; const dy = (Math.floor(k / 3) - (rows - 1) / 2) * 2.6 + 1.2;
+      el.style.left = `${x + dx}%`; el.style.top = `${y + dy}%`;
+    });
+  }
+}
+
+function hop(el) { const lift = el.firstElementChild.nextElementSibling; lift.classList.remove('hop'); void lift.offsetWidth; lift.classList.add('hop'); }
+
+function movePawn(p, el) {
+  const target = p.pos;
+  if (S.target[p.id] === target) return;
+  S.target[p.id] = target;
+  clearInterval(S.anim[p.id]);
+  const d = (target - S.disp[p.id] + 40) % 40;
+  if (d > 0 && d <= 12 && !p.inJail) {
+    el.style.transitionDuration = '.16s';
+    S.anim[p.id] = setInterval(() => {
+      S.disp[p.id] = (S.disp[p.id] + 1) % 40;
+      hop(el); placePawns();
+      if (S.disp[p.id] === target) {
+        clearInterval(S.anim[p.id]);
+        const cell = $(`#board [data-space="${target}"]`);
+        if (cell) { cell.classList.remove('flash'); void cell.offsetWidth; cell.classList.add('flash'); }
+      }
+    }, 190);
+  } else {
+    el.style.transitionDuration = '.8s';
+    S.disp[p.id] = target; hop(el); placePawns();
+  }
+}
+
+function updatePawns() {
+  const layer = $('#pawns'); const live = st().players.filter((p) => !p.bankrupt);
+  for (const el of $$('.pawn', layer)) if (!live.some((p) => p.id === el.dataset.pid)) el.remove();
+  for (const p of live) {
+    let el = layer.querySelector(`[data-pid="${p.id}"]`);
+    if (!el) {
+      el = document.createElement('div');
+      el.className = `pawn${p.id === S.me ? ' me' : ''}`; el.dataset.pid = p.id;
+      el.style.setProperty('--pc', p.color);
+      el.innerHTML = `<div class="pshadow"></div><div class="lift"><div class="stand" title="${esc(p.name)}"><div class="disc">${p.token}</div><div class="post"></div><div class="base"></div></div></div>`;
+      layer.appendChild(el);
+      S.disp[p.id] = p.pos; S.target[p.id] = p.pos;
+      placePawns();
+    }
+    el.classList.toggle('jailed', p.inJail);
+    movePawn(p, el);
+  }
+}
+
+function hudTopHTML() {
+  const s = st(); const e = s.econ; const cur = s.players[s.turn.idx];
+  const heatLbl = e.heat < 30 ? 'cold' : e.heat > 70 ? 'hot' : 'steady';
+  const banner = s.status === 'finished' ? '🏆 Game over'
+    : `<span class="tok" style="border-color:${cur.color}">${cur.token}</span>${cur.id === S.me ? 'Your turn' : `${esc(cur.name)}'s turn`} <span class="muted ph">· ${phaseLabel(s.turn.phase, cur)}</span>`;
+  return `<div class="turn-banner">${banner}</div>
+    <div class="ticker">
+      <div class="tick"><small>Round</small><b>${s.round}</b></div>
+      <div class="tick"><small>Policy rate</small><b>${pct(e.policyRate)}</b></div>
+      <div class="tick"><small>Inflation</small><b>${pct(e.inflation)}</b></div>
+      <div class="tick"><small>Heat</small><b>${Math.round(e.heat)} · ${heatLbl}</b></div>
+      <div class="tick"><small>Price level</small><b>${e.priceLevel.toFixed(3)}</b></div>
+      <div class="tick"><small>Fiscal</small><b>${e.fiscal}</b></div>
+    </div>`;
+}
+
+function hudBottomHTML() {
+  const s = st(); const me = meP();
+  if (s.status === 'finished') return '<div class="muted">The game has ended — see the final standings above.</div>';
+  let h = '';
   if (me && !me.bankrupt) {
     if (me.cash < 0) h += `<div class="alert">You have negative cash (${plain$(me.cash)}). Sell buildings, mortgage, borrow or trade to get back above $0 — or declare bankruptcy.</div>`;
-    if (me.marginCall) h += `<div class="alert warn">⚠ MARGIN CALL: bank debt ${plain$(me.bankDebt)} exceeds your limit of ${plain$(me.maxLoan)}. Repay before you end your next turn or the bank liquidates assets.</div>`;
+    if (me.marginCall) h += `<div class="alert warn">⚠ MARGIN CALL: bank debt ${plain$(me.bankDebt)} exceeds your limit of ${plain$(me.maxLoan)}. Repay before you end your turn or the bank liquidates assets.</div>`;
   }
-  // Card display for the current turn
+  h += `<div class="actions">${actionButtons()}</div>`;
+  h += `<div class="mini-log">${s.log.slice(-3).reverse().map((l) => `<div>${esc(l.msg)}</div>`).join('')}</div>`;
+  return h;
+}
+
+function overlayHTML() {
+  const s = st();
+  if (s.status === 'finished') {
+    const w = s.winner && pl(s.winner);
+    return `<div class="final"><h2>🏆 ${w ? `${w.token} ${esc(w.name)} wins!` : 'Game over'}</h2>
+      <table class="t"><tr><th>Player</th><th class="n">Net worth</th></tr>${s.players.slice().sort((a, b) => b.netWorth - a.netWorth).map((p) => `<tr><td>${p.token} ${esc(p.name)}${p.bankrupt ? ' ☠' : ''}</td><td class="n">${money(p.netWorth)}</td></tr>`).join('')}</table></div>`;
+  }
+  let h = '';
   if (s.lastCard && s.lastCard.seq !== S.lastCardSeq) { S.lastCardSeq = s.lastCard.seq; S.cardKey = `${s.round}-${s.turn.idx}`; }
   if (s.lastCard && S.cardKey === `${s.round}-${s.turn.idx}`) {
-    h += `<div class="card-pop ${s.lastCard.deck}"><h4>${s.lastCard.deck === 'event' ? '📰 Market Event' : '🏛️ Town Treasury'} · ${pname(s.lastCard.player)}</h4>${esc(s.lastCard.text)}</div>`;
+    h += `<div class="card-pop ${s.lastCard.deck}" data-seq="${s.lastCard.seq}"><h4>${s.lastCard.deck === 'event' ? '📰 Market Event' : '🏛️ Town Treasury'} · ${pname(s.lastCard.player)}</h4>${esc(s.lastCard.text)}</div>`;
   }
   if (s.auction) h += auctionHTML();
-  h += `<div class="actions">${actionButtons()}</div>`;
-  h += `<div class="mini-log">${s.log.slice(-6).reverse().map((l) => `<div>${esc(l.msg)}</div>`).join('')}</div>`;
   return h;
 }
 
@@ -263,14 +375,28 @@ function actionButtons() {
 
 function renderBoard() {
   const s = st();
-  const board = $('#board');
-  setHTML(board, S.board.spaces.map(cellHTML).join('') + `<div class="center" id="center">${centerHTML()}</div>`);
-  if (s.lastRoll && s.lastRoll.seq !== S.lastRollSeq) {
-    S.lastRollSeq = s.lastRoll.seq;
-    const p = pl(s.lastRoll.player);
-    const cell = board.querySelector(`[data-space="${p.pos}"]`);
-    if (cell) cell.classList.add('flash');
+  const board = ensureBoard();
+  const cells = board.children;
+  for (const sp of S.board.spaces) {
+    const { cls, html } = cellParts(sp);
+    const key = cls + html;
+    if (S.cellCache[sp.index] !== key) {
+      const el = cells[sp.index];
+      const flashing = el.classList.contains('flash');
+      el.className = cls + (flashing ? ' flash' : ''); el.innerHTML = html;
+      S.cellCache[sp.index] = key;
+    }
   }
+  updatePawns();
+  if (s.lastRoll && s.lastRoll.seq !== S.lastRollSeq) {
+    const first = S.lastRollSeq === null;
+    S.lastRollSeq = s.lastRoll.seq;
+    setDice(s.lastRoll.dice, !first);
+  }
+  setHTML($('#hudTop'), hudTopHTML());
+  setHTML($('#hudBottom'), hudBottomHTML());
+  const ov = overlayHTML();
+  if (ov !== S.overlayCache) { S.overlayCache = ov; setHTML($('#overlay'), ov); }
 }
 
 setInterval(() => {
