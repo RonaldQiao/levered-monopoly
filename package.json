@@ -1,0 +1,14 @@
+{
+  "name": "margin-call",
+  "version": "1.0.0",
+  "description": "A LAN multiplayer property-trading game with central banking, leverage, swaps and financial contracts.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}
