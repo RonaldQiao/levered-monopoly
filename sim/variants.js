@@ -221,3 +221,5 @@ V.classic = withSettings(PRESETS.classic);
 V.skill = withSettings(PRESETS.skill);
 for (const r of [3, 5, 6, 7, 8, 9]) V[`skillN${r}`] = withSettings({ ...PRESETS.skill, neutralRate: r });
 V.skillNoCap = withSettings({ ...PRESETS.skill, maxRounds: 0 });
+V.classicBankLiq = withSettings({ ...PRESETS.classic, liquidation: 'bank' });
+V.skillBankLiq = withSettings({ ...PRESETS.skill, liquidation: 'bank' });

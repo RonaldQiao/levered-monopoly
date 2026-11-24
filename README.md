@@ -1,6 +1,7 @@
 # Margin Call — a levered property-trading game
 
-A browser-based multiplayer board game for 2–8 players on the same network.
+A browser-based multiplayer board game for 2–8 players, on the same network or
+[online](#play-online-with-friends).
 It plays by the **traditional property-trading rules** (40-space board, colour groups,
 houses and hotels, mortgages, jail, cards, auctions, trading, bankruptcy) and adds a
 **central bank**, a **macro-economy** and **player-to-player financial contracts**.
@@ -22,6 +23,39 @@ join with the 4-letter room code. Refreshing or reconnecting resumes your seat.
 npm test             # rules engine tests + randomised full-game fuzzing
 ```
 
+## Play online with friends
+
+It's already a web game: one Node server holds the game and everyone plays in a browser. To play from
+different places, the server just needs a public address. Two ways:
+
+**1. Quickest: run it on your computer and open a tunnel** (no account, no deploy, works while your
+computer is on):
+
+```bash
+npm start
+# in a second terminal (install cloudflared from Cloudflare first):
+cloudflared tunnel --url http://localhost:3000
+```
+
+`cloudflared` prints a `https://….trycloudflare.com` address. Send that to your friends. `ngrok http 3000`
+or Tailscale Funnel work the same way.
+
+**2. Always on: deploy it to a host that runs Node and supports WebSockets.** For example Render, Railway or
+Fly.io, or any small VPS. Connect the GitHub repository and the host redeploys on every push:
+
+* Build command `npm install` (or `npm ci`), start command `npm start`. The server reads `PORT` from the host.
+* Or use the included `Dockerfile` (`docker build -t margin-call . && docker run -p 3000:3000 margin-call`).
+
+Things to know:
+
+* **GitHub Pages won't work.** It only serves static files, and the game needs its Node server.
+* **Games live in memory.** A restart or redeploy ends games in progress. Free tiers that sleep when idle
+  restart the server too, and take a few seconds to wake up.
+* **Anyone with the address and a room code can join.** There are no accounts, so share the room code only
+  with your group.
+* **The server pings every connection every 25 s.** That keeps hosting proxies from dropping quiet games;
+  dropped players reconnect and keep their seat.
+
 ## Traditional rules (implemented)
 
 | Rule | Implementation |
@@ -36,7 +70,8 @@ npm test             # rules engine tests + randomised full-game fuzzing
 | Lockup | Pay bail, use a get-out card, or roll doubles. After the 3rd failed roll, pay and move |
 | Cards | *Market Event* (≈ Chance) and *Town Treasury* (≈ Community Chest), plus macro-shock cards |
 | Trading | Property, cash and get-out cards, any time. No buildings in the traded group |
-| Bankruptcy | Can't get back to $0 cash → bankrupt. Assets return to the bank. Last player standing wins, or the host ends the game and the highest net worth wins |
+| Bankruptcy | Can't get back to $0 cash → bankrupt. The estate is auctioned to the other players (or returned to the bank with distressed sales off). Last player standing wins, or the host ends the game and the highest net worth wins |
+| Distressed sales | Below $0 or in a margin call, you can **auction** property to the other players instead of only selling to the bank: a sealed, second-price sale whose reserve is the bank's price (half the building cost + mortgage value). A lot in a built colour group sells as the whole group, buildings included. Lobby option, on by default |
 
 ## The central bank (leverage)
 
@@ -103,6 +138,7 @@ so that trading decisions, not dice, decide the game. Every option can also be s
 | Credit pricing | Risk-priced | Steeper credit spread, re-priced every round, so leverage has a running cost |
 | Neutral real rate | 8%/round | Borrowing costs about what property earns, so there is a best amount to borrow |
 | Game length | 40 rounds | Then the highest net worth wins |
+| Distressed property | Auction to players | Underwater players can auction property to the other players; bankrupt estates are auctioned |
 
 In simulation (`sim/REPORT.md`) the Skill test preset plays in about 39 rounds and ~480 actions (classic: ~80
 rounds and ~900). Two AI players beat two casual players in 91% of games (classic: about 70%), and

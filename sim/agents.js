@@ -33,6 +33,7 @@ function casual(g, pid) {
   }
   if (!myTurn) return null;
   const ph = g.turn.phase;
+  if (ph === 'roll' && g.auction) return null;
   if (ph === 'buy') return me.cash - g.price(g.turn.pendingBuy) >= g.scale(100) ? { action: 'buy' } : { action: 'decline' };
   if (ph === 'roll' || ph === 'done') {
     if (me.inJail && ph === 'roll' && me.cash > 400 && me.jailCards.length) return { action: 'useJailCard' };
@@ -130,6 +131,9 @@ const variants = {
 };
 
 module.exports = { variants, casual, makeRandom, wrapPro };
+
+// never uses distressed sales (sells to the bank only), still bids on other players' sales
+variants.pro_noLiq = wrapPro({ forbid: (a) => a.action === 'liquidate' });
 
 // desk sub-ablations (diagnose which desk habit costs the shipped AI)
 variants.pro_noInsure = wrapPro({ forbid: (a) => a.action === 'deskBuy' && a.order && a.order.product === 'insurance' });

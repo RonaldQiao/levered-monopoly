@@ -28,6 +28,7 @@ function casual(g, pid) {
   }
   if (!myTurn) return null;
   const ph = g.turn.phase;
+  if (ph === 'roll' && g.auction) return null;
   if (ph === 'buy') return me.cash >= g.price(g.turn.pendingBuy) ? { action: 'buy' } : { action: 'decline' };
   if (ph === 'roll' || ph === 'done') {
     if (me.cash > 350) {

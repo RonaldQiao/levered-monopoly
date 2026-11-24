@@ -219,3 +219,85 @@ test('bots play skill-preset games to the round cap through the rules', () => {
     assert.ok(drafted >= 20, `the draft distributed the board (${drafted} lots sold)`);
   }
 });
+
+// ------------------------------------------------------------------ distressed sales
+function builtGame() {
+  const g = newGame(3);
+  const [a, b, c] = g.players;
+  // a owns the full orange group with 2 houses each, then falls below $0
+  for (const i of [16, 18, 19]) { g.props[i].owner = a.id; g.props[i].houses = 2; }
+  g.bankHouses -= 6;
+  g.props[5].owner = a.id; // a transit, no buildings
+  a.cash = -300;
+  return { g, a, b, c };
+}
+
+test('an underwater player can auction a built colour group as one package, buildings included', () => {
+  const { g, a, b, c } = builtGame();
+  assert.throws(() => g.liquidate(b, 5), /You do not own|below \$0/);
+  g.liquidate(a, 18);
+  const au = g.auction;
+  assert.deepStrictEqual(au.lots.slice().sort((x, y) => x - y), [16, 18, 19]);
+  assert.strictEqual(au.reserve, 6 * 50 + 90 + 90 + 100, 'reserve = half building cost + mortgage values');
+  assert.ok(!au.active.includes(a.id), 'the seller cannot bid');
+  assert.throws(() => g.bid(b, au.reserve - 1), /reserve/);
+  assert.throws(() => g.liquidate(a, 5), /Another auction/);
+  assert.throws(() => g.roll(g.current()), /auction/);
+  g.bid(b, 1200); g.bid(c, 900);
+  for (const i of [16, 18, 19]) { assert.strictEqual(g.props[i].owner, b.id); assert.strictEqual(g.props[i].houses, 2); }
+  assert.strictEqual(a.cash, -300 + 900, 'seller receives the second-highest bid');
+  assert.strictEqual(b.cash, 1500 - 900);
+});
+
+test('a distressed sale with no bid at the reserve leaves the property with the seller', () => {
+  const { g, a, b, c } = builtGame();
+  g.liquidate(a, 5);
+  assert.deepStrictEqual(g.auction.lots, [5]);
+  g.passAuction(b); g.passAuction(c);
+  assert.strictEqual(g.props[5].owner, a.id);
+  assert.strictEqual(g.auction, null);
+});
+
+test('distressed sales need a deficit or margin call, and can be switched off', () => {
+  const g = newGame(3);
+  const [a] = g.players;
+  g.props[5].owner = a.id;
+  assert.throws(() => g.liquidate(a, 5), /below \$0/);
+  const off = newGame(3, { liquidation: 'bank' });
+  off.props[5].owner = off.players[0].id; off.players[0].cash = -10;
+  assert.throws(() => off.liquidate(off.players[0], 5), /off/);
+});
+
+test('a bankrupt estate is auctioned with buildings intact; unsold land returns to the bank', () => {
+  const g = newGame(4);
+  const [a, b, c, d] = g.players;
+  for (const i of [16, 18, 19]) { g.props[i].owner = a.id; g.props[i].houses = 3; }
+  g.bankHouses -= 9;
+  g.props[5].owner = a.id;
+  const houses0 = g.bankHouses;
+  g.declareBankruptcy(a);
+  assert.ok(g.auction && g.auction.kind === 'estate');
+  const first = g.auction.lots;
+  // land in the queue earns nobody rent and can't be bought by landing on it
+  for (const i of [16, 18, 19, 5]) assert.strictEqual(g.props[i].owner, null);
+  const cash0 = b.cash;
+  if (first.length === 3) { g.bid(b, 800); g.bid(c, 500); g.passAuction(d); } else { g.passAuction(b); g.passAuction(c); g.passAuction(d); }
+  const second = g.auction.lots;
+  if (second.length === 3) { g.bid(b, 800); g.bid(c, 500); g.passAuction(d); } else { g.passAuction(b); g.passAuction(c); g.passAuction(d); }
+  assert.strictEqual(g.auction, null);
+  for (const i of [16, 18, 19]) { assert.strictEqual(g.props[i].owner, b.id); assert.strictEqual(g.props[i].houses, 3); }
+  assert.strictEqual(b.cash, cash0 - 500, 'estate buyer pays the second-highest bid to the bank');
+  assert.strictEqual(g.props[5].owner, null, 'unsold transit returns to the bank');
+  assert.ok(!g.props[5].estate);
+  assert.strictEqual(g.bankHouses, houses0, 'sold buildings stay on the board');
+});
+
+test('with distressed sales off, bankruptcy returns everything to the bank as before', () => {
+  const g = newGame(3, { liquidation: 'bank' });
+  const [a] = g.players;
+  g.props[1].owner = a.id; g.props[3].owner = a.id; g.props[1].houses = 1; g.bankHouses--;
+  g.declareBankruptcy(a);
+  assert.strictEqual(g.auction, null);
+  assert.strictEqual(g.props[1].owner, null);
+  assert.strictEqual(g.bankHouses, 32);
+});

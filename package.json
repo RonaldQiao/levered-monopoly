@@ -9,6 +9,9 @@
     "sim": "node sim/experiments.js all && node sim/formats.js all && node sim/round2.js"
   },
   "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
   "dependencies": {
     "ws": "^8.18.0"
   }

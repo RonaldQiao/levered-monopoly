@@ -105,7 +105,21 @@ function attach(ws, room, playerId, token) {
 
 const wss = new WebSocketServer({ server, maxPayload: 64 * 1024 });
 
+// Keepalive: hosting proxies (Render, Cloudflare, nginx...) drop WebSockets that are idle for ~60s, and a
+// dead connection would otherwise linger. Ping every 25s; a socket that missed the last ping is closed, and
+// the browser reconnects and resumes its seat.
+const keepalive = setInterval(() => {
+  for (const ws of wss.clients) {
+    if (ws.isAlive === false) { ws.terminate(); continue; }
+    ws.isAlive = false;
+    try { ws.ping(); } catch { /* closing */ }
+  }
+}, 25000);
+wss.on('close', () => clearInterval(keepalive));
+
 wss.on('connection', (ws) => {
+  ws.isAlive = true;
+  ws.on('pong', () => { ws.isAlive = true; });
   ws.on('message', (raw) => {
     let msg;
     try { msg = JSON.parse(raw); } catch { return; }

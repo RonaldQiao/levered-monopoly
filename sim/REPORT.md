@@ -248,6 +248,41 @@ Reading the results:
 * **Not yet testable: rates and credit forecasting.** The fixed desk leaves no free edge, and no forecasting
   agent was built to look for a fair one.
 
+## 8. Distressed-sale auctions
+
+Before this change, an underwater player could only sell buildings back to the bank at half their cost, or
+trade lots one at a time. A bankrupt player's land simply went back to the bank. Now, a player below $0 or in a
+margin call can auction property to the other players:
+
+* It is a sealed, second-price sale.
+* The reserve is what the bank would pay.
+* A built colour group sells as one package with its buildings.
+
+Bankrupt estates are auctioned the same way, with the proceeds going to the bank. The lobby option is on by
+default.
+
+300 games per cell (`node sim/liquidation.js 300`):
+
+| | classic, bank only | classic, auctions | skill, bank only | skill, auctions |
+|---|---|---|---|---|
+| Rounds per game | 64 | **57** | 38 | 37 |
+| Completed distressed sales per game | 0 | 21 | 0 | 12 |
+| Overall play (pro vs casual): win / games to detect | 70% / 22 | 70% / 20 | 91% / 14 | 91% / 14 |
+| Negotiation | 61% / 98 | 60% / 120 | 61% / 54 | 61% / 52 |
+| Using leverage | 80% / 13 | **84% / 9** | 70% / 16 | 73% / 16 |
+| Position sizing (pro vs reckless) | 48% / — | 44% / — | 58% / 190 | **69% / 36** |
+| Starting your own sale (pro vs never-auctions) | — | 45% / — | — | 50% / — |
+
+What it does:
+
+* **Sizing is much easier to see in the Skill test preset** (190 → 36 games). Over-levered players now have to
+  sell into a market of careful players, who pick up their assets below value.
+* **Games end sooner** under classic rules.
+* **Starting a sale yourself doesn't help the seller measurably.** The value goes to the buyers, which is
+  realistic for a fire sale.
+* **The cost is more auctions to sit through** (12–21 per game). Each one closes as soon as every bidder has
+  bid, so with bots it is instant; with people, each sale is one sealed bid.
+
 ## Caveats
 
 * The agents are rule-based heuristics, not LLM agents. "Skill detectable in N games" is measured *between
@@ -271,6 +306,7 @@ node sim/round2.js 300 tightRiskDupN7:40,tightRiskDupN9:40,tightRiskDupN9:25 fin
 node sim/round2.js 300 classic:100,skill:40 final_after
 node sim/tune.js 150 skill             # AI leverage parameters
 node sim/tuneDraft.js 120              # AI draft bidding
+node sim/liquidation.js 300            # distressed-sale auctions vs bank-only
 ```
 
 JSON results are written to `sim/results/`.

@@ -143,14 +143,15 @@ function renderLobby() {
     <label>Doubles roll again${onOff('setDoubles', set.doubles)}</label>
     <label>Credit pricing${sel('setCredit', set.creditModel, [['classic', 'Classic (0.5%/unit leverage)'], ['riskPriced', 'Risk-priced (1.5%/unit, re-priced each round)']])}</label>
     <label>Neutral real rate %/round<input id="setNeutral" type="number" min="0" max="12" step="0.5" value="${set.neutralRate}" ${dis}></label>
-    <label>Game length<input id="setRounds" type="number" min="0" max="500" step="5" value="${set.maxRounds}" ${dis} title="0 = play until one player is left"></label>`);
+    <label>Game length<input id="setRounds" type="number" min="0" max="500" step="5" value="${set.maxRounds}" ${dis} title="0 = play until one player is left"></label>
+    <label>Distressed property${sel('setLiq', set.liquidation, [['auction', 'Auction to players (sealed bid)'], ['bank', 'Sell to the bank only']])}</label>`);
   for (const inp of $$('#lobbySettings input, #lobbySettings select')) {
     inp.onchange = () => act('settings', { settings: {
       startingCash: $('#setCash').value, salary: $('#setSalary').value, maxLeverage: $('#setLev').value, auctions: $('#setAuc').value === '1',
       acquisition: $('#setAcq').value, auctionFormat: $('#setAucFmt').value, diceMode: $('#setDice').value,
       ...($('#setSeed') ? { seed: $('#setSeed').value } : {}),
       moneyCards: $('#setCards').value === '1', jail: $('#setJail').value === '1', doubles: $('#setDoubles').value === '1',
-      creditModel: $('#setCredit').value, neutralRate: $('#setNeutral').value, maxRounds: $('#setRounds').value,
+      creditModel: $('#setCredit').value, neutralRate: $('#setNeutral').value, maxRounds: $('#setRounds').value, liquidation: $('#setLiq').value,
     } });
   }
   $('#startBtn').disabled = !host || s.players.length < 2;
@@ -367,16 +368,23 @@ function phaseLabel(ph, p) {
 function sealedAuctionHTML(a, me, left) {
   const s = st(); const inIt = a.active.includes(S.me);
   const total = s.spaceInfo.filter(Boolean).filter((x) => x.price !== undefined).length;
-  const title = a.draft ? `📋 Draft lot ${total - s.draftLeft}/${total}: ${esc(space(a.space).name)}` : `🔨 Sealed-bid auction: ${esc(space(a.space).name)}`;
+  const lots = a.lots || [a.space];
+  const names = lots.map((i) => { const h = s.spaceInfo[i].houses; return `${esc(space(i).name)}${h === 5 ? ' (hotel)' : h ? ` (${h} house${h > 1 ? 's' : ''})` : ''}${s.spaceInfo[i].mortgaged ? ' (mortgaged)' : ''}`; }).join(' + ');
+  const list = lots.reduce((x, i) => x + s.spaceInfo[i].price, 0);
+  const title = a.kind === 'draft' ? `📋 Draft lot ${total - s.draftLeft}/${total}: ${names}`
+    : a.kind === 'liquidation' ? `🔨 Distressed sale by ${pname(a.seller)}: ${names}`
+      : a.kind === 'estate' ? `🏛 Estate sale (${esc(a.from)}): ${names}` : `🔨 Sealed-bid auction: ${names}`;
+  const sub = a.kind === 'liquidation' ? `Reserve ${plain$(a.reserve)} (what the bank would pay). Proceeds go to the seller.`
+    : a.kind === 'estate' ? `From a bankrupt player; proceeds go to the bank.${s.salesQueued ? ` ${s.salesQueued} more lot(s) to follow.` : ''}` : '';
   return `<div class="auction-box">
-    <div><b>${title}</b> <span class="muted">(list ${plain$(s.spaceInfo[a.space].price)})</span> <button class="link" data-deed="${a.space}">deed</button></div>
-    <div class="muted" style="margin:4px 0">Highest bid wins and pays the <b>second-highest</b> bid, so bid what it is worth to you. Bids stay secret until the lot closes.</div>
+    <div><b>${title}</b> <span class="muted">(list ${plain$(list)})</span> <button class="link" data-deed="${a.space}">deed</button></div>
+    <div class="muted" style="margin:4px 0">Highest bid wins and pays the <b>second-highest</b> bid, so bid what it is worth to you. Bids stay secret until the lot closes. ${sub}</div>
     <div class="muted">closes in <b id="auctionTimer">${left}</b>s · bid: ${a.submitted.map((id) => pl(id).token).join(' ') || '—'} · waiting: ${a.active.map((id) => pl(id).token).join(' ') || '—'}</div>
     ${inIt && me && !me.bankrupt ? `<div class="row" style="margin-top:8px">
-      <input id="bidAmt" type="number" min="1" max="${me.cash}" placeholder="your max" style="width:110px">
+      <input id="bidAmt" type="number" min="${a.reserve || 1}" max="${me.cash}" placeholder="your max" style="width:110px">
       <button class="primary" data-act="bid">Submit sealed bid</button>
       <button class="danger" data-act="passAuction">Pass</button>
-    </div>` : `<div class="muted" style="margin-top:6px">${a.myBid !== undefined ? `Your sealed bid: <b>${plain$(a.myBid)}</b>` : 'You passed on this lot.'}</div>`}
+    </div>` : `<div class="muted" style="margin-top:6px">${a.seller === S.me ? 'This is your sale — you cannot bid on it.' : a.myBid !== undefined ? `Your sealed bid: <b>${plain$(a.myBid)}</b>` : 'You passed on this lot.'}</div>`}
   </div>`;
 }
 
@@ -409,7 +417,7 @@ function actionButtons() {
         b += `<button class="primary big" data-act="roll">🎲 Roll for doubles (try ${me.jailTurns + 1}/3)</button>`;
         b += `<button data-act="payBail" ${me.cash < s.econ.bail ? 'disabled' : ''}>Pay ${plain$(s.econ.bail)} bail</button>`;
         if (me.jailCards) b += '<button data-act="useJailCard">Use get-out card</button>';
-      } else b += `<button class="primary big" data-act="roll">🎲 Roll dice${s.turn.doubles ? ' again' : ''}</button>`;
+      } else b += `<button class="primary big" data-act="roll" ${s.auction ? 'disabled title="Wait for the auction to close"' : ''}>🎲 Roll dice${s.turn.doubles ? ' again' : ''}</button>`;
     } else if (ph === 'buy') {
       const i = s.turn.pendingBuy; const price = s.spaceInfo[i].price;
       b += `<button class="primary big" data-act="buy" ${me.cash < price ? 'disabled' : ''}>Buy ${esc(space(i).name)} for ${plain$(price)}</button>`;
@@ -523,6 +531,8 @@ function tabAssets() {
   const byGroup = {};
   for (const i of mine) { const k = space(i).type === 'street' ? space(i).group : space(i).type; (byGroup[k] ||= []).push(i); }
   let h = '';
+  const canLiq = s.settings.liquidation === 'auction' && (me.cash < 0 || me.marginCall) && !s.auction;
+  if (canLiq) h += '<p class="muted" style="font-size:12.5px">You are underwater. Besides selling to the bank, you can <b>auction</b> property to the other players: a sealed-bid sale with the bank\'s price as the reserve. A lot in a built colour group sells as the whole group with its buildings.</p>';
   for (const [k, list] of Object.entries(byGroup)) {
     const g = S.board.groups[k];
     const full = g && S.board.spaces.filter((x) => x.group === k).every((x) => s.spaceInfo[x.index].owner === S.me);
@@ -534,6 +544,10 @@ function tabAssets() {
       if (info.houses > 0) acts.push(`<button class="small" data-act="sell" data-space="${i}">sell bldg +${plain$(info.houseCost / 2)}</button>`);
       if (!info.mortgaged && info.houses === 0) acts.push(`<button class="small" data-act="mortgage" data-space="${i}">mortgage +${plain$(info.mortgageValue)}</button>`);
       if (info.mortgaged) acts.push(`<button class="small" data-act="unmortgage" data-space="${i}">lift −${plain$(info.unmortgageCost)}</button>`);
+      if (canLiq && !info.encumbered) {
+        const built = sp.type === 'street' && S.board.spaces.some((x) => x.group === sp.group && s.spaceInfo[x.index].houses > 0);
+        acts.push(`<button class="small" data-act="liquidate" data-space="${i}" data-confirm="${built ? 'Auction the whole colour group with its buildings?' : `Auction ${esc(sp.name)}?`} The bank's price is the reserve.">auction${built ? ' set' : ''}</button>`);
+      }
       const bld = info.houses === 5 ? '<span class="mini-hotel" title="hotel"></span>' : '<span class="mini-house"></span>'.repeat(info.houses);
       h += `<div class="prop-row"><div class="sw" style="background:${propColor(i)}"></div>
         <div><a href="#" data-deed="${i}">${esc(sp.name)}</a> ${bld} ${info.mortgaged ? '<span class="badge warn">mortgaged</span>' : ''} ${info.encumbered ? '<span class="badge">pledged</span>' : ''}
@@ -1043,6 +1057,7 @@ const RULES_HTML = `<div class="rules"><h2>How to play Margin Call</h2>
 <li><b>Mortgage</b> unimproved property for half its value; lifting a mortgage costs +10%. Mortgaged property earns no rent.</li>
 <li><b>Lockup</b>: pay bail, use a get-out card, or roll doubles (max 3 tries, then pay and move).</li>
 <li>Draw <b>Market Event</b> and <b>Town Treasury</b> cards — some are macro shocks hitting the whole economy.</li>
+<li><b>Distressed sales</b> (lobby option, on by default): when you are below $0 or in a margin call you can auction property to the other players by sealed bid, with the bank's price as the reserve. A lot in a built colour group sells as the whole group with its buildings. A bankrupt player's estate is auctioned the same way, with the proceeds going to the bank.</li>
 <li>Trade property, cash and cards at any time. Can't pay? Raise cash or declare <b>bankruptcy</b>. Last player standing wins (or the host can end the game: highest net worth wins).</li>
 </ul>
 <h3>The central bank</h3>

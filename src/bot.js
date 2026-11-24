@@ -160,7 +160,22 @@ function buyMove(g, me, m) {
   return { action: 'decline' };
 }
 
+// What a package of lots (possibly a whole built colour group) is worth to pid: the change in strategic
+// value from owning it, with buildings at 90% of their cost when the package completes a set.
+function packageValue(g, pid, lots) {
+  const before = ownerMap(g); const after = { ...before };
+  for (const i of lots) after[i] = pid;
+  let v = stratValue(g, pid, after) - stratValue(g, pid, before);
+  for (const i of lots) if (g.props[i].houses) v += g.props[i].houses * g.houseCost(i) * 0.4; // stratValue counts 0.5
+  return v;
+}
+
 function auctionCap(g, me, i) {
+  const a = g.auction;
+  if (a && (a.kind === 'liquidation' || a.kind === 'estate')) {
+    const res = reserve(g, me);
+    return Math.floor(Math.min(packageValue(g, me.id, a.lots), me.cash - res * 0.3));
+  }
   const price = g.price(i); const w = worth(g, me.id, i);
   const key = w >= 1.8 * price;
   if (g.auction && g.auction.draft && params.draftMode === 'budget') {
@@ -177,7 +192,7 @@ function auctionMove(g, me) {
   if (a.sealed) {
     // Second-price sealed bid: bidding the true valuation is optimal. Only our own bid is ever read.
     const cap = auctionCap(g, me, a.space);
-    return cap >= 1 ? { action: 'bid', amount: cap } : { action: 'passAuction' };
+    return cap >= Math.max(1, a.reserve || 1) ? { action: 'bid', amount: cap } : { action: 'passAuction' };
   }
   if (a.highBidder === me.id) return null;
   const i = a.space; const price = g.price(i);
@@ -186,6 +201,31 @@ function auctionMove(g, me) {
   const next = a.highBid === 0 ? Math.max(1, Math.min(cap, Math.round(price * 0.4))) : a.highBid + inc;
   if (next <= cap && next > a.highBid) return { action: 'bid', amount: next };
   return { action: 'passAuction' };
+}
+
+// Cash the bank route could still raise: mortgages, half-price building sales, desk positions, new loans.
+function bankLiquidity(g, me) {
+  let v = me.cash + g.deskValue(me) + g.borrowHeadroom(me);
+  for (const i of g.ownedBy(me.id)) v += g.bankValue([i]);
+  return v;
+}
+
+// Underwater and the bank route can't cover it: sell to the other players instead, biggest package first.
+function liquidationMove(g, me, m) {
+  if (g.settings.liquidation !== 'auction' || g.auction || g.player(me.id).cash >= 0) return null;
+  if (bankLiquidity(g, g.player(me.id)) >= 0) return null;
+  const tried = (m.done.liq ||= new Set()); // each package once per turn
+  const seen = new Set(); const pkgs = [];
+  for (const i of g.ownedBy(me.id)) {
+    if (seen.has(i) || g.encumbrances(i).length) continue;
+    const lots = g.salePackage(i); lots.forEach((j) => seen.add(j));
+    if (lots.some((j) => g.props[j].owner !== me.id) || tried.has(lots.join(','))) continue;
+    pkgs.push({ lots, v: g.bankValue(lots) + lots.reduce((a, j) => a + g.price(j) * 0.3, 0) });
+  }
+  pkgs.sort((a, b) => b.v - a.v);
+  if (!pkgs.length) return null;
+  tried.add(pkgs[0].lots.join(','));
+  return { action: 'liquidate', space: pkgs[0].lots[0] };
 }
 
 function raiseCash(g, me) {
@@ -405,6 +445,8 @@ function decide(g, pid) {
 
   const myTurn = g.current().id === pid;
   if (me.cash < 0) {
+    const l = ok(liquidationMove(g, me, m)); if (l) return l;
+    if (g.auction && g.auction.seller === pid) return null; // our sale is running: wait for the proceeds
     const a = ok(raiseCash(g, me));
     if (a) return a;
     return myTurn ? { action: 'bankrupt' } : null;
@@ -414,6 +456,7 @@ function decide(g, pid) {
   if (ph === 'buy') return ok(buyMove(g, me, m)) || { action: 'decline' };
   if (ph === 'roll') {
     const a = ok(manage(g, me, m)); if (a) return a;
+    if (g.auction) return null; // wait for the auction (e.g. an estate sale) to close
     if (me.inJail) { const j = ok(jailMove(g, me)); if (j) return j; }
     return { action: 'roll' };
   }
@@ -428,4 +471,4 @@ function decide(g, pid) {
 // Called by the server when an action the bot chose was refused, so it won't retry it this turn.
 function markFailed(g, pid, action) { memo(g, pid).failed.add(key(action)); }
 
-module.exports = { decide, markFailed, worth, reserve, buildCandidates, evalTrade, evalContract, auctionCap, params };
+module.exports = { decide, markFailed, worth, reserve, buildCandidates, evalTrade, evalContract, auctionCap, packageValue, params };

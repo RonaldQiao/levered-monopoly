@@ -24,7 +24,7 @@ function instrument(g) {
   const t = (pid) => (T[pid] ||= {
     cards: 0, rentIn: 0, rentOut: 0, salary: 0, tax: 0, bail: 0, desk: 0, contracts: 0,
     landUnowned: 0, bought: 0, auctionWon: 0, auctionSpend: 0, tradesDone: 0, firstSetRound: null,
-    peakRentHit: 0, borrowed: 0, interest: 0, liquidated: 0,
+    peakRentHit: 0, borrowed: 0, interest: 0, liquidated: 0, distressBuys: 0, distressSales: 0, distressProceeds: 0, estateBuys: 0,
   });
   g.tele = T;
   const pay = g.pay.bind(g);
@@ -42,6 +42,8 @@ function instrument(g) {
     else if (r.startsWith('interest on')) add(from, 'interest', paid);
     else if (r.includes(': ')) { add(to, 'contracts', paid); add(from, 'contracts', -paid); }
     else if (r.startsWith('won auction')) { add(from, 'auctionWon', 1); add(from, 'auctionSpend', paid); }
+    else if (r.startsWith('won liquidation')) { add(from, 'distressBuys', 1); add(to, 'distressSales', 1); add(to, 'distressProceeds', paid); }
+    else if (r.startsWith('won estate')) add(from, 'estateBuys', 1);
     else if (r.startsWith('bought ')) add(from, 'bought', 1);
     else if (r.startsWith('forced mortgage')) add(to, 'liquidated', 1);
     return paid;
