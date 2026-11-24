@@ -11,8 +11,24 @@
 //   is short (house shortage), and borrows from the central bank when building ROI beats the loan rate.
 // - Bids to its valuation in auctions, haggles for monopoly-completing trades, refuses lopsided deals.
 // - Values player contracts by discounted expected cash flows and counterparty risk.
-// - Uses the bank desk: rent insurance when one bad roll could ruin it, shares of the leader with idle cash.
+// - Uses the bank desk for rent insurance when one bad roll could ruin it. (It no longer parks idle cash
+//   in the leader's shares: simulation showed that habit roughly halved its results — see sim/REPORT.md.)
+// - In sealed-bid auctions (and the opening draft) it bids its valuation once.
+// - Sizes leverage to the cost of credit: next round's interest bill is part of its cash reserve, and it
+//   borrows to build only when the building's return clears the loan rate by `roiMultiple`.
 const { SPACES, GROUP_MEMBERS, TRANSITS, UTILITIES } = require('./board');
+
+// Tunables (exported so the simulator can tune them).
+const params = {
+  targetLeverage: 2.3,  // max assets/equity it will borrow up to
+  roiMultiple: 2,       // borrow to build only if building ROI > roiMultiple x loan rate
+  interestReserve: 0,   // rounds of interest to hold in reserve (0 tested best in sim/tune.js)
+  investInLeader: false,
+  draftMode: 'budget',  // 'budget' (below) or 'value' (bid like any auction)
+  draftMult: 0.8,       // opening draft: max multiple of list price for any other lot (tuned: sim/tuneDraft.js)
+  draftKeyMult: 1.6,    // opening draft: max multiple of list price for a set-completing/blocking lot
+  draftKeep: 0.15,      // opening draft: share of starting cash kept back for building
+};
 
 // Approximate long-run landing probability per space per turn (jail-weighted).
 const LAND = [0.031, 0.021, 0.019, 0.022, 0.024, 0.029, 0.023, 0.009, 0.023, 0.023,
@@ -74,7 +90,8 @@ function reserve(g, me) {
   const boardMax = g.maxOpponentRent(me.id);
   const insured = g.desk.positions.some((x) => x.holder === me.id && x.type === 'insurance');
   const tail = insured ? 0.12 : 0.25;
-  return Math.round(Math.max(g.scale(100), exp * 2, worst * (insured ? 0.3 : 0.6), boardMax * tail));
+  const interest = me.loans.reduce((a, l) => a + (l.principal * l.rate) / 100, 0) * params.interestReserve;
+  return Math.round(Math.max(g.scale(100), exp * 2, worst * (insured ? 0.3 : 0.6), boardMax * tail) + interest);
 }
 
 // Strategic value of an ownership map for one player (used for trades).
@@ -109,7 +126,7 @@ function bestLoan(g, me, amount) {
   const kind = g.econ.heat > 62 || g.econ.inflation > 1.2 ? 'fixed' : 'floating';
   return { action: 'borrow', amount: Math.max(10, Math.round(amount)), term: 10, kind };
 }
-const targetLeverage = (g) => Math.min(g.settings.maxLeverage, 2.3);
+const targetLeverage = (g) => Math.min(g.settings.maxLeverage, params.targetLeverage);
 
 // ------------------------------------------------------------------ building
 function buildCandidates(g, me) {
@@ -143,17 +160,72 @@ function buyMove(g, me, m) {
   return { action: 'decline' };
 }
 
+// What a package of lots (possibly a whole built colour group) is worth to pid: the change in strategic
+// value from owning it, with buildings at 90% of their cost when the package completes a set.
+function packageValue(g, pid, lots) {
+  const before = ownerMap(g); const after = { ...before };
+  for (const i of lots) after[i] = pid;
+  let v = stratValue(g, pid, after) - stratValue(g, pid, before);
+  for (const i of lots) if (g.props[i].houses) v += g.props[i].houses * g.houseCost(i) * 0.4; // stratValue counts 0.5
+  return v;
+}
+
+function auctionCap(g, me, i) {
+  const a = g.auction;
+  if (a && (a.kind === 'liquidation' || a.kind === 'estate')) {
+    const res = reserve(g, me);
+    return Math.floor(Math.min(packageValue(g, me.id, a.lots), me.cash - res * 0.3));
+  }
+  const price = g.price(i); const w = worth(g, me.id, i);
+  const key = w >= 1.8 * price;
+  if (g.auction && g.auction.draft && params.draftMode === 'budget') {
+    // Opening draft: the whole board is for sale at once, so spend to a budget. Pay up to 1.6x list for a
+    // lot that completes or blocks a set, 0.8x list otherwise, and keep 15% of the starting cash to build with.
+    return Math.floor(Math.min(price * (key ? params.draftKeyMult : params.draftMult), me.cash - params.draftKeep * g.scale(g.settings.startingCash)));
+  }
+  const res = reserve(g, me);
+  return Math.floor(Math.min(key ? w : Math.min(w, price * 1.05), me.cash - (key ? res * 0.15 : res * 0.5)));
+}
+
 function auctionMove(g, me) {
   const a = g.auction;
+  if (a.sealed) {
+    // Second-price sealed bid: bidding the true valuation is optimal. Only our own bid is ever read.
+    const cap = auctionCap(g, me, a.space);
+    return cap >= Math.max(1, a.reserve || 1) ? { action: 'bid', amount: cap } : { action: 'passAuction' };
+  }
   if (a.highBidder === me.id) return null;
-  const i = a.space; const price = g.price(i); const w = worth(g, me.id, i);
-  const res = reserve(g, me);
-  const key = w >= 1.8 * price;
-  const cap = Math.floor(Math.min(key ? w : Math.min(w, price * 1.05), me.cash - (key ? res * 0.15 : res * 0.5)));
+  const i = a.space; const price = g.price(i);
+  const cap = auctionCap(g, me, i);
   const inc = Math.max(5, Math.round(price * 0.05));
   const next = a.highBid === 0 ? Math.max(1, Math.min(cap, Math.round(price * 0.4))) : a.highBid + inc;
   if (next <= cap && next > a.highBid) return { action: 'bid', amount: next };
   return { action: 'passAuction' };
+}
+
+// Cash the bank route could still raise: mortgages, half-price building sales, desk positions, new loans.
+function bankLiquidity(g, me) {
+  let v = me.cash + g.deskValue(me) + g.borrowHeadroom(me);
+  for (const i of g.ownedBy(me.id)) v += g.bankValue([i]);
+  return v;
+}
+
+// Underwater and the bank route can't cover it: sell to the other players instead, biggest package first.
+function liquidationMove(g, me, m) {
+  if (g.settings.liquidation !== 'auction' || g.auction || g.player(me.id).cash >= 0) return null;
+  if (bankLiquidity(g, g.player(me.id)) >= 0) return null;
+  const tried = (m.done.liq ||= new Set()); // each package once per turn
+  const seen = new Set(); const pkgs = [];
+  for (const i of g.ownedBy(me.id)) {
+    if (seen.has(i) || g.encumbrances(i).length) continue;
+    const lots = g.salePackage(i); lots.forEach((j) => seen.add(j));
+    if (lots.some((j) => g.props[j].owner !== me.id) || tried.has(lots.join(','))) continue;
+    pkgs.push({ lots, v: g.bankValue(lots) + lots.reduce((a, j) => a + g.price(j) * 0.3, 0) });
+  }
+  pkgs.sort((a, b) => b.v - a.v);
+  if (!pkgs.length) return null;
+  tried.add(pkgs[0].lots.join(','));
+  return { action: 'liquidate', space: pkgs[0].lots[0] };
 }
 
 function raiseCash(g, me) {
@@ -204,7 +276,7 @@ function manage(g, me, m) {
     const rate = g.quote(me, 10, 0, 'floating') / 100;
     const need = top.cost * Math.min(3, cands.length + 1) + res - me.cash;
     const levAfter = (g.assets(me) + need) / Math.max(1, g.bookEquity(me));
-    if (top.roi > rate * 2 && g.borrowHeadroom(me) >= need && levAfter <= targetLeverage(g)) { m.done.borrowBuild = true; return bestLoan(g, me, need); }
+    if (top.roi > rate * params.roiMultiple && g.borrowHeadroom(me) >= need && levAfter <= targetLeverage(g)) { m.done.borrowBuild = true; return bestLoan(g, me, need); }
   }
   // 4. Lift other mortgages when flush.
   const mort = g.ownedBy(me.id).filter((i) => g.props[i].mortgaged).sort((a, b) => worth(g, me.id, b) - worth(g, me.id, a));
@@ -225,7 +297,7 @@ function manage(g, me, m) {
     }
   }
   // 7. Park idle cash in the strongest rival: a hedge against them winning.
-  if (!top && !me.loans.length && me.cash > res * 3 + g.scale(400) && !m.done.invest) {
+  if (params.investInLeader && !top && !me.loans.length && me.cash > res * 3 + g.scale(400) && !m.done.invest) {
     m.done.invest = true;
     const leader = opponents(g, me.id).sort((a, b) => g.netWorth(b) - g.netWorth(a))[0];
     const price = leader && g.desk.marks[leader.id].price;
@@ -373,6 +445,8 @@ function decide(g, pid) {
 
   const myTurn = g.current().id === pid;
   if (me.cash < 0) {
+    const l = ok(liquidationMove(g, me, m)); if (l) return l;
+    if (g.auction && g.auction.seller === pid) return null; // our sale is running: wait for the proceeds
     const a = ok(raiseCash(g, me));
     if (a) return a;
     return myTurn ? { action: 'bankrupt' } : null;
@@ -382,6 +456,7 @@ function decide(g, pid) {
   if (ph === 'buy') return ok(buyMove(g, me, m)) || { action: 'decline' };
   if (ph === 'roll') {
     const a = ok(manage(g, me, m)); if (a) return a;
+    if (g.auction) return null; // wait for the auction (e.g. an estate sale) to close
     if (me.inJail) { const j = ok(jailMove(g, me)); if (j) return j; }
     return { action: 'roll' };
   }
@@ -396,4 +471,4 @@ function decide(g, pid) {
 // Called by the server when an action the bot chose was refused, so it won't retry it this turn.
 function markFailed(g, pid, action) { memo(g, pid).failed.add(key(action)); }
 
-module.exports = { decide, markFailed, worth, reserve, buildCandidates, evalTrade, evalContract };
+module.exports = { decide, markFailed, worth, reserve, buildCandidates, evalTrade, evalContract, auctionCap, packageValue, params };
