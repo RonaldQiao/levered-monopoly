@@ -41,7 +41,11 @@ const DEFAULT_SETTINGS = {
   creditModel: 'classic',  // 'riskPriced': steeper credit spread, re-priced on all bank debt every round
   maxRounds: 0,            // > 0: game ends after this round, highest net worth wins
   liquidation: 'auction',  // 'auction': distressed property is sold to players by sealed bid | 'bank': bank only
+  botDelay: 1500,          // ms between AI moves; the host can change it at any time, even mid-game
+  botsPaused: false,       // paused: AI players don't take turns (they still answer auctions and offers)
 };
+const BOT_DELAY_MIN = 200;
+const BOT_DELAY_MAX = 15000;
 
 // "Skill test" preset: chosen by simulation (sim/REPORT.md) to be faster and less luck-dependent
 // while keeping risk: draft instead of landing luck, sealed bids instead of reaction speed, duplicate
@@ -183,6 +187,19 @@ class Game {
     if (s.neutralRate !== undefined) this.settings.neutralRate = clamp(toNum(s.neutralRate), 0, 12);
     if (s.maxRounds !== undefined) this.settings.maxRounds = clamp(toInt(s.maxRounds || 0), 0, 500);
     if (s.seed !== undefined) this.settings.seed = s.seed === null || s.seed === '' ? null : clamp(toInt(s.seed, 'seed'), 0, 2 ** 31 - 1);
+  }
+
+  // AI speed is a table setting, not a rule: the host can change it in the lobby or mid-game.
+  setBotSpeed(pid, { delay, paused } = {}) {
+    this.requireHost(pid);
+    if (delay !== undefined) this.settings.botDelay = clamp(toInt(delay, 'delay'), BOT_DELAY_MIN, BOT_DELAY_MAX);
+    if (paused !== undefined) this.settings.botsPaused = paused === true || paused === 'true';
+    const host = this.player(pid).name;
+    if (this.status === 'playing') {
+      this.addLog(this.settings.botsPaused
+        ? `⏸ ${host} paused the AI players. They still answer auctions and offers but won't take turns.`
+        : `⏱ ${host} set the AI speed to ${(this.settings.botDelay / 1000).toFixed(1)}s per move.`, 'system');
+    }
   }
 
   start(pid) {
@@ -1322,6 +1339,7 @@ class Game {
     if (a === 'start') return this.start(pid);
     if (a === 'addBot') { if (this.status !== 'lobby') fail('Bots join in the lobby'); this.addBot(pid); return; }
     if (a === 'removeBot') { if (this.status !== 'lobby') fail('Bots leave in the lobby'); return this.removeBot(pid, msg.target); }
+    if (a === 'botSpeed') return this.setBotSpeed(pid, msg);
     if (a === 'chat') { const text = String(msg.text || '').slice(0, 200).trim(); if (text) this.addLog(`${p.name}: ${text}`, 'chat'); return; }
     this.requirePlaying();
     if (a !== 'kick' && a !== 'endNow') this.requireAlive(p);
@@ -1420,4 +1438,4 @@ class Game {
 
 require('./desk')(Game, { fail, toInt, toNum, clamp, round2 });
 
-module.exports = { Game, GameError, DEFAULT_SETTINGS, PRESETS, LOAN_TERMS, CLAUSE_KINDS };
+module.exports = { Game, GameError, DEFAULT_SETTINGS, PRESETS, LOAN_TERMS, CLAUSE_KINDS, BOT_DELAY_MIN, BOT_DELAY_MAX };

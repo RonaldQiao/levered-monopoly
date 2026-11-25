@@ -376,3 +376,7 @@ table.t tr.dead { opacity: .45; }
 .toast.err { background: #3b1513; color: #ffd6d1; border-color: var(--bad); }
 @keyframes tin { from { opacity: 0; transform: translateY(8px); } }
 .tooltip { position: fixed; z-index: 70; background: var(--paper); color: var(--ink); border-radius: 6px; padding: 4px 8px; font-size: 12px; pointer-events: none; white-space: nowrap; box-shadow: 0 4px 12px #0008; }
+
+/* host AI-speed control */
+.ai-speed { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 13px; }
+.ai-speed select { width: auto; }
