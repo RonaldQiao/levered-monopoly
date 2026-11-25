@@ -112,6 +112,23 @@ function render() {
   }
 }
 
+// ------------------------------------------------------------------ AI speed (host control, any time)
+const AI_SPEEDS = [[500, 'Very fast (0.5s)'], [1000, 'Fast (1s)'], [1500, 'Normal (1.5s)'], [2500, 'Relaxed (2.5s)'], [4000, 'Slow (4s)'], [6000, 'Very slow (6s)'], [10000, 'Crawl (10s)']];
+function aiSpeedHTML(id = 'aiSpeed') {
+  const s = st(); const me = meP();
+  if (!s.players.some((p) => p.bot)) return '';
+  const d = s.settings.botDelay || 1500; const paused = !!s.settings.botsPaused;
+  const opts = AI_SPEEDS.some(([v]) => v === d) ? AI_SPEEDS : [...AI_SPEEDS, [d, `${(d / 1000).toFixed(1)}s`]].sort((x, y) => x[0] - y[0]);
+  if (!me || !me.host) {
+    return `<div class="ai-speed"><span class="muted">🤖 AI speed: <b>${paused ? 'paused' : `${(d / 1000).toFixed(1)}s per move`}</b> (set by the host)</div>`;
+  }
+  return `<div class="ai-speed">
+    <label for="${id}">🤖 AI speed</label>
+    <select id="${id}" class="ai-speed-select" title="Time between AI moves">${opts.map(([v, l]) => `<option value="${v}" ${v === d ? 'selected' : ''}>${l}</option>`).join('')}</select>
+    <button class="small ${paused ? 'primary' : ''}" data-aipause="${paused ? '0' : '1'}" title="${paused ? 'Let the AI players move again' : 'AI players stop taking turns (they still answer auctions and offers)'}">${paused ? '▶ Resume AI' : '⏸ Pause AI'}</button>
+  </div>`;
+}
+
 // ------------------------------------------------------------------ lobby
 function renderLobby() {
   const s = st(); const me = meP();
@@ -127,7 +144,7 @@ function renderLobby() {
   $('#lobbyPresets').innerHTML = `<span class="muted">Rules preset:</span>
     <button class="small ${isSkill ? '' : 'primary'}" data-preset="classic" ${dis}>Classic</button>
     <button class="small ${isSkill ? 'primary' : ''}" data-preset="skill" ${dis} title="Draft + sealed bids, duplicate dice, no money cards / jail / doubles, costly risk-priced credit, 40 rounds">Skill test</button>
-    <span class="muted" style="font-size:12px">${isSkill ? 'Skill test: faster, less luck — trading decisions decide the game. Replay the same seed with seats rotated for a duplicate match.' : 'Classic: the traditional game plus the central bank.'}</span>`;
+    <span class="muted" style="font-size:12px">${isSkill ? 'Skill test: faster, less luck — trading decisions decide the game. Replay the same seed with seats rotated for a duplicate match.' : 'Classic: the traditional game plus the central bank.'}</span>${aiSpeedHTML('aiSpeedLobby')}`;
   $('#lobbySettings').innerHTML = (`
     <label>Starting cash<input id="setCash" type="number" min="500" max="5000" step="100" value="${set.startingCash}" ${dis}></label>
     <label>PAYDAY salary<input id="setSalary" type="number" min="50" max="1000" step="10" value="${set.salary}" ${dis}></label>
@@ -494,7 +511,7 @@ function renderTab() {
 function tabPlayers() {
   const s = st(); const me = meP();
   let h = '';
-  if (me && me.host && s.status === 'playing') h += `<div class="row" style="justify-content:flex-end;margin-bottom:8px"><button class="small" data-act="endNow" data-confirm="End the game now? Highest net worth wins.">End game now (net worth wins)</button></div>`;
+  if (s.status === 'playing') h += `<div class="row" style="justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:8px">${aiSpeedHTML()}${me && me.host ? '<button class="small" data-act="endNow" data-confirm="End the game now? Highest net worth wins.">End game now (net worth wins)</button>' : ''}</div>`;
   for (const p of s.players) {
     const turn = s.status === 'playing' && s.players[s.turn.idx].id === p.id;
     const props = ownedBy(p.id);
@@ -1109,6 +1126,7 @@ document.addEventListener('click', (ev) => {
   if (t.dataset.open === 'contract') return openContractModal();
   if (t.dataset.deed !== undefined) { ev.preventDefault(); openDeed(Number(t.dataset.deed)); return; }
   if (t.dataset.preset) { act('settings', { settings: { preset: t.dataset.preset } }); return; }
+  if (t.dataset.aipause) { act('botSpeed', { paused: t.dataset.aipause === '1' }); return; }
   if (t.dataset.bidplus) { const a = st().auction; const inp = $('#bidAmt'); const base = Math.max(a.highBid, Number(inp.value) || 0); inp.value = base + Number(t.dataset.bidplus); return; }
   if (t.dataset.bankmax !== undefined) { $('#bankAmt').value = meP().headroom; return; }
   if (t.dataset.chat !== undefined) { const i = $('#chatIn'); if (i.value.trim()) { act('chat', { text: i.value }); i.value = ''; } return; }
@@ -1141,6 +1159,7 @@ const onDeskField = (ev) => {
 };
 document.addEventListener('input', onDeskField);
 document.addEventListener('change', onDeskField);
+document.addEventListener('change', (ev) => { if (ev.target.classList.contains('ai-speed-select')) act('botSpeed', { delay: Number(ev.target.value) }); });
 
 document.addEventListener('keydown', (ev) => {
   if (ev.key === 'Escape') closeModal();

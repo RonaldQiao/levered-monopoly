@@ -157,6 +157,10 @@ The host can add up to 7 AI players in the lobby. They act through the same rule
 - price contracts by discounted cash flows and counterparty risk
 - buy rent insurance when the board turns dangerous
 
+**AI speed.** The host sets how long AI players wait between moves (0.5s to 10s, default 1.5s) from the lobby
+or at any time during the game (Players tab). **Pause AI** stops AI players from taking turns; they still answer
+auctions and offers, so nothing stalls. `BOT_DELAY=ms npm start` changes the default for new rooms.
+
 The AI's tunable parameters are in `bot.params` and were tuned with the simulator (`sim/tune.js`,
 `sim/tuneDraft.js`). Over 300 classic four-player games, two AI players beat two casual players about 3 times
 in 4. In the Skill test preset they win 91% of games.

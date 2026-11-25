@@ -9,7 +9,10 @@ const { Game, GameError } = require('./src/engine');
 const { SPACES, GROUPS } = require('./src/board');
 const bot = require('./src/bot');
 
-const BOT_DELAY = Number(process.env.BOT_DELAY) || 650; // ms between bot actions so humans can follow along
+// Default ms between AI moves for new rooms; the host changes it per room from the game screen.
+const BOT_DELAY = Number(process.env.BOT_DELAY) || 0;
+// While AI players are paused they still answer these (so auctions and offers never stall).
+const PASSIVE = new Set(['bid', 'passAuction', 'acceptTrade', 'rejectTrade', 'acceptContract', 'rejectContract']);
 
 const PORT = Number(process.env.PORT) || 3000;
 const HOST = process.env.HOST || '0.0.0.0';
@@ -72,6 +75,7 @@ function scheduleBots(room) {
       let a = null;
       try { a = bot.decide(g, p.id); } catch (e) { console.error('bot decide error', e); }
       if (!a) continue;
+      if (g.settings.botsPaused && !PASSIVE.has(a.action)) continue;
       try {
         g.apply(p.id, a);
         room.botFails[p.id] = 0;
@@ -83,7 +87,15 @@ function scheduleBots(room) {
       }
       return broadcast(room);
     }
-  }, g.auction ? (g.auction.sealed ? Math.min(250, BOT_DELAY) : BOT_DELAY + 250) : BOT_DELAY);
+  }, botDelay(g));
+}
+
+// Sealed bids are private, so AI players submit them quickly; in open auctions they keep a pace that
+// still fits inside the 12s bidding window; everything else follows the host's speed setting.
+function botDelay(g) {
+  const d = g.settings.botDelay || 1500;
+  if (g.auction) return g.auction.sealed ? Math.min(250, d) : Math.min(d, 3000) + 250;
+  return d;
 }
 
 function scheduleTick(room) {
@@ -127,6 +139,7 @@ wss.on('connection', (ws) => {
       if (msg.type === 'create') {
         const code = newCode();
         const room = { game: new Game(code), sockets: new Set(), tokens: new Map(), timer: null };
+        if (BOT_DELAY) room.game.settings.botDelay = BOT_DELAY;
         rooms.set(code, room);
         const p = room.game.addPlayer(msg.name);
         const token = crypto.randomBytes(16).toString('hex');

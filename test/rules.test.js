@@ -301,3 +301,17 @@ test('with distressed sales off, bankruptcy returns everything to the bank as be
   assert.strictEqual(g.props[1].owner, null);
   assert.strictEqual(g.bankHouses, 32);
 });
+
+test('host can change AI speed and pause AI players at any time; others cannot', () => {
+  const g = newGame(3);
+  const host = g.players.find((p) => p.host); const other = g.players.find((p) => !p.host);
+  assert.strictEqual(g.settings.botDelay, 1500);
+  g.apply(host.id, { action: 'botSpeed', delay: 4000 });
+  assert.strictEqual(g.settings.botDelay, 4000);
+  g.apply(host.id, { action: 'botSpeed', delay: 999999 });
+  assert.strictEqual(g.settings.botDelay, 15000, 'clamped');
+  g.apply(host.id, { action: 'botSpeed', paused: true });
+  assert.strictEqual(g.settings.botsPaused, true);
+  assert.throws(() => g.apply(other.id, { action: 'botSpeed', delay: 500 }), /host/);
+  assert.strictEqual(g.status, 'playing', 'works mid-game, unlike rule settings');
+});
