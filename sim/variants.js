@@ -65,19 +65,18 @@ V.cash3000 = { pre: (g) => { g.settings.startingCash = 3000; } };
 
 // ---- candidate low-luck / fast rules -------------------------------------------
 // Opening draft: every property is auctioned before round 1 (acquisition no longer depends on where you land).
+// Mirrors the engine's own draft (settings.acquisition = 'draft' in Game.start()): lots are opened with
+// Game.openAuction(i, true) (sealed, second-price, kind 'draft'), and Game.closeAuction() chains the next
+// lot from g.draftQueue and returns the turn to 'roll' when the queue is empty. Applied in post() so it
+// runs after V.dup resets g.turn.
 V.draft = {
   post: (g) => {
+    if (g.auction && g.auction.draft) return; // the engine-native draft is already running
     const order = Object.keys(g.props).map(Number);
     for (let k = order.length - 1; k > 0; k--) { const j = Math.floor(g.rng() * (k + 1)); [order[k], order[j]] = [order[j], order[k]]; }
     g.draftQueue = order;
-    const close = g.closeAuction.bind(g);
-    const open = () => {
-      const i = g.draftQueue.shift();
-      if (i === undefined) return;
-      g.auction = { space: i, highBid: 0, highBidder: null, active: g.active().map((x) => x.id), deadline: g.now() + 25000 };
-    };
-    g.closeAuction = () => { close(); if (g.draftQueue.length && g.status === 'playing') open(); };
-    open();
+    g.turn.phase = 'draft';
+    g.openAuction(g.draftQueue.shift(), true);
   },
 };
 
