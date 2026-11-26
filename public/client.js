@@ -201,18 +201,22 @@ function lobbyPayoutHTML() {
 }
 
 // The settlement as a table: one row per player, plus the pot.
-function payoutTableHTML(r) {
+// compact: for narrow spaces (the sidebar, phones) drop the net-worth and share columns
+// (shown on hover instead, and on each player's card) so the table fits without scrolling.
+function payoutTableHTML(r, compact = false) {
   const P = window.Payout;
   const rows = r.rows.map((row) => {
     const p = pl(row.id);
-    return `<tr class="${row.bankrupt ? 'dead' : ''}"><td>${p ? p.token : ''} ${esc(row.name || (p && p.name))}${row.bankrupt ? ' ☠' : ''}</td>
-      <td class="n">${P.dollars(row.stake)}</td><td>${P.placeLabel(row)}</td><td class="n">${money(row.netWorth)}</td>
-      <td class="n">${(row.share * 100).toFixed(1)}%</td><td class="n">${P.dollars(row.payout)}</td>
+    const detail = `Net worth ${money(row.netWorth).replace(/<[^>]+>/g, '')} · share ${(row.share * 100).toFixed(1)}%`;
+    return `<tr class="${row.bankrupt ? 'dead' : ''}" ${compact ? `title="${esc(detail)}"` : ''}><td class="pname">${p ? p.token : ''} ${esc(row.name || (p && p.name))}${row.bankrupt ? ' ☠' : ''}</td>
+      <td class="n">${P.dollars(row.stake)}</td><td>${P.placeLabel(row)}</td>${compact ? '' : `<td class="n">${money(row.netWorth)}</td>
+      <td class="n">${(row.share * 100).toFixed(1)}%</td>`}<td class="n">${P.dollars(row.payout)}</td>
       <td class="n ${row.net < 0 ? 'neg' : row.net > 0 ? 'pos' : ''}">${P.signed(row.net)}</td></tr>`;
   }).join('');
-  return `<div class="payout-wrap"><table class="t payout-table">
-    <tr><th>Player</th><th class="n">Stake</th><th>Place</th><th class="n">Net worth</th><th class="n">Share</th><th class="n">Payout</th><th class="n">Net ±$</th></tr>
-    ${rows}<tr class="total"><td><b>Pot</b></td><td class="n"><b>${P.dollars(r.pot)}</b></td><td></td><td></td><td></td><td class="n"><b>${P.dollars(r.rows.reduce((a, x) => a + x.payoutCents, 0) / 100)}</b></td><td></td></tr></table></div>`;
+  const paid = P.dollars(r.rows.reduce((a, x) => a + x.payoutCents, 0) / 100);
+  return `<div class="payout-wrap"><table class="t payout-table${compact ? ' compact' : ''}">
+    <tr><th>Player</th><th class="n">Stake</th><th>Place</th>${compact ? '' : '<th class="n">Net worth</th><th class="n">Share</th>'}<th class="n">Payout</th><th class="n">Net ±$</th></tr>
+    ${rows}<tr class="total"><td><b>Pot</b></td><td class="n"><b>${P.dollars(r.pot)}</b></td><td></td>${compact ? '' : '<td></td><td></td>'}<td class="n"><b>${paid}</b></td><td></td></tr></table></div>`;
 }
 
 // During play: what the payout would be if the host ended the game now (same function as the server).
@@ -418,7 +422,7 @@ function overlayHTML() {
   if (s.status === 'finished') {
     const w = s.winner && pl(s.winner);
     return `<div class="final"><h2>🏆 ${w ? `${w.token} ${esc(w.name)} wins!` : 'Game over'}</h2>
-      ${s.payout ? `<h3 class="payout-head">💵 Real-money payout · ${esc(s.payout.label)}</h3>${payoutTableHTML(s.payout)}`
+      ${s.payout ? `<h3 class="payout-head">💵 Real-money payout · ${esc(s.payout.label)}</h3>${payoutTableHTML(s.payout, window.innerWidth < 700)}`
     : `<table class="t"><tr><th>Player</th><th class="n">Net worth</th></tr>${s.players.slice().sort((a, b) => b.netWorth - a.netWorth).map((p) => `<tr><td>${p.token} ${esc(p.name)}${p.bankrupt ? ' ☠' : ''}</td><td class="n">${money(p.netWorth)}</td></tr>`).join('')}</table>`}</div>`;
   }
   let h = '';
@@ -597,7 +601,7 @@ function tabPlayers() {
   if (s.settings.realMoney) {
     const r = s.payout || livePayout();
     h += `<h3 class="payout-head">💵 Real-money payout · ${esc(r.label)}</h3>
-      <div class="muted" style="font-size:12px;margin-bottom:4px">${s.payout ? 'Final settlement.' : 'If the game ended now (the host ending it).'}</div>${payoutTableHTML(r)}`;
+      <div class="muted" style="font-size:12px;margin-bottom:4px">${s.payout ? 'Final settlement.' : 'If the game ended now (the host ending it).'}</div>${payoutTableHTML(r, true)}`;
   }
   return h;
 }
