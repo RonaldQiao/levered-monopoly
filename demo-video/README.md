@@ -47,3 +47,17 @@ node capture.js take1 swaps           # real-time capture (~100 s)
 
 "You" plays routine moves with the shipped AI. Only the hedge is scripted (`swaps/game.js`).
 The director checks that the contract and orders the UI sends match the recorded ones, and logs `[director] proposeContract matches the recorded action`.
+
+## The Twitter cut (`combined/`)
+
+This is video 1's look with video 2's idea: **You vs 4 AI agents** (seed 81). It opens on an AI margin call at round 27, then rewinds.
+At round 12 You borrows $2,000 floating and hedges it. The player swap with Hayek is shown as a term-sheet card, not the
+contract form, followed by a desk swap. Rates climb from about 2% to 5%. The AIs borrow at 4–6.5%, get margin-called and go bankrupt.
+Hayek goes bust mid-contract and the pledged Harbour Walk passes to You. You win in round 35.
+
+```bash
+cd demo-video
+node combined/scan.js 120             # games where You hedges, rates rise and You wins
+node combined/rec.js                  # record seed 81 -> combined/frames81.json
+node capture.js take1 combined && ./encode.sh combined/take1 combined/margin-call-twitter.mp4
+```

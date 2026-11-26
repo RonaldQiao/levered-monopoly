@@ -12,20 +12,21 @@ function seeded(seed) {
   return () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
 }
 const NAMES = ['You', 'Keynes', 'Minsky', 'Volcker', 'Hayek'];
+// `cp` names the counterparty of the player swap (default Keynes).
 
-function play({ TERM = 15, seed, hedgeRound = 14, loan = 1200, notional = 800, deskNotional = 400, record = false, until = 60, collateral = true, script = true }) {
+function play({ cp = 'Keynes', TERM = 15, seed, hedgeRound = 14, loan = 1200, notional = 800, deskNotional = 400, record = false, until = 60, collateral = true, script = true }) {
   let clock = 1_700_000_000_000;
   const g = new Game('DEMO', { rng: seeded(seed), now: () => clock });
   const me = g.addPlayer(NAMES[0]);
   for (let k = 1; k < NAMES.length; k++) g.addPlayer(NAMES[k], { bot: true });
   g.start(me.id);
-  const keynes = g.players.find((p) => p.name === 'Keynes');
+  const keynes = g.players.find((p) => p.name === cp);
   const poll = seeded((seed ^ 0x9e3779b9) >>> 0);
   const frames = []; const fresh = [];
   const origLog = g.addLog.bind(g);
   g.addLog = (msg, kind) => { fresh.push({ msg, kind, round: g.round }); origLog(msg, kind); };
   const snap = (actor, action, tag) => {
-    const f = { actor, action, tag, round: g.round, events: fresh.splice(0), rate: g.econ.policyRate };
+    const f = { actor, action, tag, round: g.round, events: fresh.splice(0), rate: g.econ.policyRate, nw: Object.fromEntries(g.players.map((p) => [p.id, p.bankrupt ? 0 : Math.round(g.netWorth(p))])) };
     if (record) { g.version++; f.state = JSON.parse(JSON.stringify(g.serialize())); f.state.log = f.state.log.slice(-40); }
     frames.push(f);
   };
