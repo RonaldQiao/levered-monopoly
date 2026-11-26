@@ -105,6 +105,7 @@ function render() {
   renderBoard();
   renderTabs();
   renderTab();
+  if (typeof renderTerminal === 'function') renderTerminal();
   const key = `${s.round}-${s.turn.idx}`;
   if (key !== S.lastTurnKey) {
     S.lastTurnKey = key;
@@ -540,7 +541,7 @@ function tabBank() {
 
 // ------------------------------------------------------------------ bank desk
 const DESK_PRODUCTS = {
-  shares: 'Buy shares (from the float)', issue: 'Issue my own shares', call: 'Call option', put: 'Put option',
+  shares: 'Buy shares (from the float)', short: 'Short shares', issue: 'Issue my own shares', call: 'Call option', put: 'Put option',
   cds: 'Credit default swap', insurance: 'Rent insurance', swap: 'Interest-rate swap',
 };
 S.dk = { product: 'shares', ref: null, shares: 10, strike: '', term: 10, notional: 500, deductible: 250, side: 'payFixed' };
@@ -556,6 +557,15 @@ function deskQuote() {
       if (n > e.inv) return `Only ${e.inv} of ${pl(d.ref).name}'s shares are available from the bank. More exist only if ${esc(pl(d.ref).name)} issues them.`;
       const cost = P.shareAskCost(mark.price, n, e.inv, e.outside);
       return `Cost ${plain$(cost)} for ${n} shares (mark $${mark.price.toFixed(2)}; avg $${(cost / Math.max(1, n)).toFixed(2)} incl. spread and scarcity) · ${e.inv - n} left in the float afterwards`;
+    }
+    case 'short': {
+      if (!mark) return '';
+      const e = desk.equity[d.ref]; const left = e.float - e.shortInterest;
+      if (n > left) return `Only ${left} ${esc(pl(d.ref).name)} shares are left to borrow.`;
+      const proceeds = P.shareBidProceeds(mark.price, n, e.inv, e.outside, mark.hazard || 0);
+      const cover = P.shareAskCost(mark.price, n, e.inv, e.outside);
+      const fee = Math.max(1, Math.round(n * mark.price * (P.DESK.shortFeeBase + P.DESK.shortFeeHazard * (mark.hazard || 0))));
+      return `You receive ${plain$(proceeds)} now · covering today would cost ${plain$(cover)} · borrow fee about ${plain$(fee)} a round · ${left - n} left to borrow`;
     }
     case 'issue': {
       const m = desk.marks[S.me]; const e = desk.equity[S.me];
@@ -600,23 +610,24 @@ function tabDesk() {
   if (!S.dk.ref || !rivals.some((p) => p.id === S.dk.ref)) S.dk.ref = rivals[0]?.id || null;
   const d = S.dk;
   const myEq = desk.equity[S.me];
-  let h = `<p class="muted" style="font-size:12.5px;margin-top:0">The central bank makes the market. It values each player at book equity plus about 8 rounds of expected rent, less a discount for default risk, re-marks once a round, and quotes around that with a spread. Every player has <b>100 shares of their own plus ${myEq.float} in a float</b> the bank holds; once the float is bought up, more shares exist only if that player issues them.</p>`;
+  let h = `<div class="row" style="margin-bottom:8px"><button class="primary" data-open-terminal>📈 Open market terminal</button></div><p class="muted" style="font-size:12.5px;margin-top:0">The central bank makes the market. It values each player at book equity plus about 8 rounds of expected rent, less a discount for default risk, re-marks once a round, and quotes around that with a spread. Every player has <b>100 shares of their own plus ${myEq.float} in a float</b> the bank holds; once the float is bought up, more shares exist only if that player issues them.</p>`;
   h += `<div class="box"><h4>Equity board</h4><table class="t"><tr><th>Player</th><th class="n">Price</th><th class="n">Δ round</th><th class="n">Float left</th><th class="n">Vol</th><th class="n">Default risk</th></tr>
     ${s.players.map((p) => { const m = desk.marks[p.id]; const e = desk.equity[p.id]; if (!m) return ''; const prev = m.history.length > 1 ? m.history[m.history.length - 2] : m.price; const ch = prev ? (m.price / prev - 1) * 100 : 0;
       return `<tr class="${p.bankrupt ? 'dead' : ''}"><td>${p.token} ${esc(p.name)}</td><td class="n">$${m.price.toFixed(2)}</td><td class="n ${ch > 0 ? 'pos' : ch < 0 ? 'neg' : ''}">${ch >= 0 ? '+' : ''}${ch.toFixed(1)}%</td><td class="n">${e.inv}/${e.outside}</td><td class="n">${(m.vol * 100).toFixed(0)}%</td><td class="n">${p.bankrupt ? 'defaulted' : pct((desk.hazards[p.id] || 0) * 100, 1)}</td></tr>`; }).join('')}</table>
     <p class="muted" style="font-size:12px;margin:6px 0 0">You own ${myEq.insider} of your ${myEq.outstanding} shares (${((100 * myEq.insider) / myEq.outstanding).toFixed(1)}%); net worth counts only your share of your own equity.</p></div>`;
-  const needsRef = ['shares', 'call', 'put', 'cds'].includes(d.product);
+  const needsRef = ['shares', 'short', 'call', 'put', 'cds'].includes(d.product);
   const f = [];
   f.push(`<label>Product<select id="dkProduct">${Object.entries(DESK_PRODUCTS).map(([k, l]) => `<option value="${k}" ${d.product === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label>`);
   if (needsRef) f.push(`<label>On player<select id="dkRef">${rivals.map((p) => `<option value="${p.id}" ${d.ref === p.id ? 'selected' : ''}>${p.token} ${esc(p.name)}</option>`).join('')}</select></label>`);
-  if (['shares', 'call', 'put', 'issue'].includes(d.product)) f.push(`<label>Shares (max ${d.product === 'issue' ? 25 : 50})<input id="dkShares" type="number" min="1" max="50" value="${d.shares}"></label>`);
+  if (['shares', 'short', 'call', 'put', 'issue'].includes(d.product)) f.push(`<label>Shares (max ${d.product === 'issue' ? 25 : 50})<input id="dkShares" type="number" min="1" max="50" value="${d.shares}"></label>`);
   if (['call', 'put'].includes(d.product)) f.push(`<label>Strike $/share<input id="dkStrike" type="number" min="0" step="0.5" placeholder="${desk.marks[d.ref] ? desk.marks[d.ref].price.toFixed(2) : ''}" value="${d.strike}"></label>`);
   if (['cds', 'swap'].includes(d.product)) f.push(`<label>Notional $<input id="dkNotional" type="number" min="50" step="50" value="${d.notional}"></label>`);
   if (d.product === 'swap') f.push(`<label>Side<select id="dkSide"><option value="payFixed" ${d.side === 'payFixed' ? 'selected' : ''}>Pay fixed, receive floating</option><option value="receiveFixed" ${d.side === 'receiveFixed' ? 'selected' : ''}>Receive fixed, pay floating</option></select></label>`);
   if (d.product === 'insurance') f.push(`<label>Deductible<select id="dkDeductible">${[100, 250, 500].map((x) => `<option value="${x}" ${Number(d.deductible) === x ? 'selected' : ''}>$${x}</option>`).join('')}</select></label>`);
-  if (!['shares', 'issue'].includes(d.product)) f.push(`<label>Term<select id="dkTerm">${[5, 10, 20].map((t) => `<option value="${t}" ${Number(d.term) === t ? 'selected' : ''}>${t} rounds</option>`).join('')}</select></label>`);
+  if (!['shares', 'short', 'issue'].includes(d.product)) f.push(`<label>Term<select id="dkTerm">${[5, 10, 20].map((t) => `<option value="${t}" ${Number(d.term) === t ? 'selected' : ''}>${t} rounds</option>`).join('')}</select></label>`);
   const help = {
     shares: 'Buy part of a rival from the bank\'s float. The ask rises as the float runs out; the bank buys back below the mark, and pays less for a player in distress. Worthless if they go bankrupt.',
+    short: 'Bet against a rival: borrow their shares from the bank and sell them now; buy them back later to close. You pay a borrow fee every round (higher for riskier players), the short counts as a liability in your equity — so a rising price can bring a margin call — and if they go bankrupt it closes for free. At most 25 shares per player, and only as many as the float allows.',
     issue: 'Raise cash by selling new shares of yourself to the bank. It is not debt, so it doesn\'t use up borrowing room, but you own a smaller slice of yourself. The bank pays below the mark, less for bigger issues, and nothing at all once your default risk passes 12% a round. Up to 25 shares a round.',
     call: 'Pays (price − strike) × shares. Priced with Black-Scholes using the player\'s share history plus the rent shocks the board implies. Sell it back to the bank any time at fair value less 10%.',
     put: 'Pays (strike − price) × shares, and the full strike if the player goes bankrupt. Sell it back any time at fair value less 10%.',
@@ -624,6 +635,7 @@ function tabDesk() {
     insurance: 'Covers a ruinous rent bill. Re-priced every round from the square you stand on and the rents ahead, so it\'s cheap in quiet stretches and expensive in front of hotels.',
     swap: 'Bet on (or hedge) the policy rate. The fixed rate comes from the bank\'s forecast of where rates are heading, not just today\'s rate. Settled every round; close early at mark-to-market − 1%.',
   }[d.product];
+  h += axesHTML() + playerMarketHTML();
   h += `<div class="box"><h4>New order</h4><div class="fields-grid">${f.join('')}</div>
     <p class="muted" style="font-size:12px">${help}</p>
     <div class="quote" id="dkQuote">${deskQuote()}</div>
@@ -640,7 +652,10 @@ function tabDesk() {
       if (x.type === 'cds') { desc = `CDS on ${ref} · ${plain$(x.notional)} · exp. R${x.expiry}`; val = `−${plain$(x.premium)}/rd`; btn = 'cancel'; confirmTxt = 'Cancel this protection? Premiums already paid are not refunded.'; }
       if (x.type === 'insurance') { desc = `Rent insurance · $${x.deductible} deductible · exp. R${x.expiry}`; val = `−${plain$(x.premium)}/rd`; btn = 'cancel'; confirmTxt = 'Cancel this policy? Premiums already paid are not refunded.'; }
       if (x.type === 'swap') { const net = Math.round(x.notional * (s.econ.policyRate - x.fixed) * (x.side === 'payFixed' ? 1 : -1) / 100); desc = `${x.side === 'payFixed' ? 'Pay' : 'Receive'} fixed ${pct(x.fixed)} on ${plain$(x.notional)} · exp. R${x.expiry}`; val = `${net >= 0 ? '+' : ''}${plain$(net)}/rd`; }
-      return `<tr><td>${desc}</td><td class="n">${val}</td><td><button class="small" data-act="deskClose" data-id="${x.id}" ${confirmTxt ? `data-confirm="${confirmTxt}"` : ''}>${btn}</button></td></tr>`;
+      if (x.type === 'short') { desc = `Short ${x.shares} × ${ref} (received ${plain$(x.proceeds)}) · fee ~${plain$(x.fee)}/rd`; val = `−${plain$(x.coverCost)}`; btn = 'cover'; confirmTxt = `Cover this short for ${plain$(x.coverCost)}?`; }
+      if (x.type === 'cdsSold') { desc = `Sold protection on ${ref} · ${plain$(x.notional)} · exp. R${x.expiry}`; val = `+${plain$(x.premium)}/rd`; btn = ''; }
+      const listBtn = ['shares', 'call', 'put', 'swap'].includes(x.type) && !st().market.listings.some((l) => l.position === x.id) ? `<button class="small" data-act="listPosition" data-id="${x.id}" data-shares="${x.shares || ''}" data-hint="${x.type === 'swap' ? 0 : positionQuote(x)}">list</button>` : '';
+      return `<tr><td>${desc}</td><td class="n">${val}</td><td><div class="row" style="flex-wrap:nowrap;gap:4px">${btn ? `<button class="small" data-act="deskClose" data-id="${x.id}" ${confirmTxt ? `data-confirm="${confirmTxt}"` : ''}>${btn}</button>` : ''}${listBtn}</div></td></tr>`;
     }).join('')}</table>`;
   }
   h += `</div><p class="muted" style="font-size:12px">Bank desk P&L so far: ${money(desk.totalPnl)} (cash ${money(desk.pnl)}, share inventory worth ${money(desk.inventoryValue)}) · open positions across all players: ${desk.positions.length}. Desk positions count toward net worth at what the bank would pay for them now, but not toward your borrowing limit.</p>`;
@@ -722,7 +737,8 @@ function tradeSide(side) {
 
 function tabTrades() {
   const s = st();
-  let h = '<div class="row" style="margin-bottom:10px"><button class="primary" data-open="trade">+ New trade</button><span class="muted" style="font-size:12px">Swap property, cash and get-out cards (traditional rules: no buildings in the traded group).</span></div>';
+  let h = '<div class="row" style="margin-bottom:10px"><button class="primary" data-open="trade">+ Two-player trade</button><button class="primary" data-open-deal>+ Multi-party deal</button></div><p class="muted" style="font-size:12px;margin-top:0">Two-player trades swap property, cash and get-out cards (traditional rules: no buildings in the traded group). Multi-party deals add any number of players and can move bank-desk positions too.</p>';
+  h += dealsHTML();
   const pending = s.trades.filter((t) => t.status === 'pending');
   const mine = pending.filter((t) => t.to === S.me || t.from === S.me);
   const others = pending.filter((t) => t.to !== S.me && t.from !== S.me);
@@ -1080,6 +1096,23 @@ document.addEventListener('click', (ev) => {
     if (t.dataset.target) extra.target = t.dataset.target;
     if (a === 'bid') { extra.amount = Number($('#bidAmt').value); if (!extra.amount) return toast('Enter a bid', 'err'); $('#bidAmt').value = ''; }
     if (a === 'borrow') { extra.amount = Number($('#bankAmt').value); extra.term = Number($('#bankTerm').value); extra.kind = $('#bankKind').value; if (!extra.amount) return toast('Enter an amount', 'err'); $('#bankAmt').value = ''; }
+    if (a === 'takeAxe') {
+      extra.axe = { id: t.dataset.id };
+      if (t.dataset.cds) { const inp = $(`#axn-${CSS.escape(t.dataset.id)}`); extra.axe.notional = Number(inp && inp.value) || undefined; extra.axe.term = 10; } else extra.axe.shares = Number(t.dataset.shares);
+    }
+    if (a === 'listPosition') {
+      let shares;
+      if (t.dataset.shares) { shares = Number(prompt(`How many shares to offer? (you hold ${t.dataset.shares})`, t.dataset.shares)); if (!shares) return; }
+      const price = Number(prompt(`Total asking price? (the bank would pay about ${plain$(Number(t.dataset.hint) * (shares ? shares / Number(t.dataset.shares) : 1))})`, ''));
+      if (!price) return;
+      extra.listing = { position: t.dataset.id, shares, price };
+      delete extra.id;
+    }
+    if (a === 'postBid') {
+      extra.bid = { ref: t.dataset.ref, shares: Number($('#tmBidN').value), priceEach: Number($('#tmBidPx').value) };
+      if (!extra.bid.shares || !extra.bid.priceEach) return toast('Enter a quantity and a price', 'err');
+    }
+    if (a === 'fillBid') { const b = st().market.bids.find((x) => x.id === t.dataset.id); extra.shares = b ? b.shares : undefined; }
     if (a === 'deskBuy') {
       const d = S.dk; const m = d.ref && st().desk.marks[d.ref];
       extra.order = { product: d.product, ref: d.ref, shares: Number(d.shares), strike: d.strike === '' && m ? m.price : Number(d.strike), term: Number(d.term), notional: Number(d.notional), deductible: Number(d.deductible), side: d.side };

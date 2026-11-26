@@ -38,6 +38,12 @@
     deductibles: [100, 250, 500],
     maxPositions: 12,
     loanPrepayFee: 0.005,   // early repayment of a fixed loan: market value + 0.5% of the principal repaid
+    maxShortPerName: 25,    // one player may be short at most this many shares of another
+    shortFeeBase: 0.005,    // stock-borrow fee per round: 0.5% of the position's value ...
+    shortFeeHazard: 0.5,    // ... plus 0.5 x the name's per-round default risk
+    axeShareDiscount: 0.02, // bank sells excess inventory below its mark
+    axeRiskDiscount: 0.03,  // ... a bit more when the name is getting riskier
+    axeCdsRate: 1.15,       // bank buys protection back at notional x hazard x 1.15 (it sells at 1.3)
   };
 
   // Abramowitz & Stegun 26.2.17, |error| < 7.5e-8
@@ -60,7 +66,11 @@
     return kind === 'call' ? S * normCdf(d1) - K * disc * normCdf(d2) : K * disc * normCdf(-d2) - S * normCdf(-d1);
   }
 
-  const fairOption = (kind, S, K, T, ratePct, vol, shares) => blackScholes(kind, S, K, T, ratePct / 100, vol) * shares;
+  // Options here can be exercised any time (American), so fair value is never below exercise value.
+  // (A deep in-the-money European put is worth less than intrinsic; using that would let a player buy
+  // at the ask and immediately sell back above it.)
+  const fairOption = (kind, S, K, T, ratePct, vol, shares) =>
+    Math.max(blackScholes(kind, S, K, T, ratePct / 100, vol), Math.max(0, kind === 'call' ? S - K : K - S)) * shares;
   // What the bank charges to sell you an option.
   const optionAsk = (kind, S, K, T, ratePct, vol, shares) =>
     Math.max(DESK.minPremium, Math.round(fairOption(kind, S, K, T, ratePct, vol, shares) * (1 + DESK.optionSpread)));

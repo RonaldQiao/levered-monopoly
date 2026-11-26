@@ -170,6 +170,12 @@ test('options: bank sells above fair value, buys back below it, and pays time va
   assert.ok(back > 0, 'an out-of-the-money option with time left is worth something');
   const c1 = a.cash; g.deskClose(a, put.id);
   assert.strictEqual(a.cash - c1, back);
+  // No free money: for every strike and term, the bank's ask is at or above its bid (deep in-the-money too).
+  for (const kind of ['call', 'put']) for (const f of [0.3, 0.7, 1, 1.3, 2]) for (const T of [1, 5, 20]) {
+    const K = m.price * f;
+    const ask = Pricing.optionAsk(kind, m.price, K, T, 4, m.vol, 10); const bid = Pricing.optionBid(kind, m.price, K, T, 4, m.vol, 10);
+    assert.ok(ask >= bid, `${kind} K=${K.toFixed(2)} T=${T}: ask ${ask} < bid ${bid}`);
+  }
 });
 
 test('shares: limited float, scarcity pricing, and issuing new shares', () => {

@@ -227,7 +227,8 @@ function manage(g, me, m) {
     }
   }
   // 7. Park idle cash in the strongest rival: a hedge against them winning.
-  if (!top && !me.loans.length && me.cash > res * 3 + g.scale(400) && !m.done.invest) {
+  const boardSettled = g.round >= 10 && Object.values(g.props).filter((x) => !x.owner).length < 6;
+  if (boardSettled && !top && !me.loans.length && me.cash > res * 3 + g.scale(400) && !m.done.invest) {
     m.done.invest = true;
     const leader = opponents(g, me.id).sort((a, b) => g.netWorth(b) - g.netWorth(a))[0];
     const price = leader && g.desk.marks[leader.id].price;
@@ -304,6 +305,32 @@ function proposeTradeMove(g, me, m) {
   return null;
 }
 
+// ------------------------------------------------------------------ multi-party deals
+function positionValue(g, x, shares) {
+  if (x.type === 'shares') return g.sharesBidValue(x) * ((shares ?? x.shares) / x.shares);
+  if (x.type === 'call' || x.type === 'put') return g.optionBidValue(x);
+  if (x.type === 'swap') return g.swapMtm(x);
+  return 0;
+}
+function evalDeal(g, me, d) {
+  const before = ownerMap(g); const after = { ...before };
+  const delta = Object.fromEntries(d.parties.map((id) => [id, 0]));
+  let cashOut = 0;
+  for (const l of d.legs) {
+    let v = 0;
+    if (l.kind === 'cash') { v = l.amount; if (l.from === me.id) cashOut += l.amount; }
+    if (l.kind === 'card') v = 50 * l.count;
+    if (l.kind === 'property') after[l.space] = l.to;
+    if (l.kind === 'position') { const x = g.desk.positions.find((y) => y.id === l.position); v = x ? positionValue(g, x, l.shares) : 0; }
+    delta[l.to] += v; delta[l.from] -= v;
+  }
+  for (const id of d.parties) delta[id] += stratValue(g, id, after) - stratValue(g, id, before);
+  if (cashOut > me.cash - reserve(g, me) * 0.3) return false;
+  const mine = delta[me.id];
+  const best = Math.max(...d.parties.filter((id) => id !== me.id).map((id) => delta[id]));
+  return mine > 0 && mine >= 0.75 * best;
+}
+
 // ------------------------------------------------------------------ contracts
 function evalContract(g, me, c) {
   const r = (g.econ.policyRate + 1.5) / 100;
@@ -372,6 +399,19 @@ function decide(g, pid) {
     let yes = false;
     try { yes = evalContract(g, me, c); } catch { yes = false; }
     return ok({ action: yes ? 'acceptContract' : 'rejectContract', id: c.id }) || { action: 'rejectContract', id: c.id };
+  }
+  const deal = (g.deals || []).find((x) => x.status === 'pending' && x.parties.includes(pid) && !x.accepted[pid]);
+  if (deal) {
+    let yes = false;
+    try { yes = evalDeal(g, me, deal); } catch { yes = false; }
+    return ok({ action: yes ? 'acceptDeal' : 'rejectDeal', id: deal.id }) || { action: 'rejectDeal', id: deal.id };
+  }
+  // Sell shares into a player's bid when it beats what the bank would pay.
+  for (const b of (g.bids || [])) {
+    if (b.status !== 'open' || b.buyer === pid) continue;
+    const x = g.desk.positions.find((y) => y.holder === pid && y.type === 'shares' && y.ref === b.ref);
+    if (!x) continue;
+    if (b.priceEach > g.sharesBidValue(x) / x.shares) { const a = ok({ action: 'fillBid', id: b.id, shares: Math.min(b.shares, x.shares) }); if (a) return a; }
   }
 
   const myTurn = g.current().id === pid;

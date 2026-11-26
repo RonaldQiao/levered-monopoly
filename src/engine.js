@@ -157,6 +157,7 @@ class Game {
     };
     this.status = 'playing';
     this.initDesk();
+    this.initMarket();
     this.round = 0;
     this.recordHistory(); // round 0 = opening conditions
     this.round = 1;
@@ -226,8 +227,11 @@ class Game {
   }
   mortgageDebt(pid) { return this.ownedBy(pid).reduce((a, i) => a + (this.props[i].mortgaged ? this.props[i].mortgageAmt : 0), 0); }
   bankDebt(p) { return p.loans.reduce((a, l) => a + l.principal, 0); }
-  assets(p) { return p.cash + this.propertyValue(p.id); }
-  bookEquity(p) { return this.assets(p) - this.bankDebt(p) - this.mortgageDebt(p.id); }
+  // Bank-desk positions are on the balance sheet at liquidation value (what the bank would pay or
+  // charge to close them now): long positions are assets, shorts and losing swaps are liabilities.
+  deskBal(p) { return this.desk ? this.deskBalance(p) : { assets: 0, liabilities: 0 }; }
+  assets(p) { return p.cash + this.propertyValue(p.id) + this.deskBal(p).assets; }
+  bookEquity(p) { return this.assets(p) - this.bankDebt(p) - this.mortgageDebt(p.id) - this.deskBal(p).liabilities; }
   leverage(p) {
     const eq = this.bookEquity(p);
     if (eq <= 0) return Infinity;
@@ -255,8 +259,7 @@ class Game {
         if (cl.from === p.id) nw -= (cl.pct / 100) * Math.max(0, this.bookEquity(p));
       }
     }
-    if (this.desk) nw += this.deskValue(p);
-    nw += this.loanMtmGain(p);
+    nw += this.loanMtmGain(p); // desk positions are already inside book equity
     return Math.round(nw);
   }
 
@@ -1111,6 +1114,7 @@ class Game {
       } else if (c.status === 'proposed') c.status = 'cancelled';
     }
     for (const t of this.trades) if (t.status === 'pending' && (t.from === p.id || t.to === p.id)) t.status = 'cancelled';
+    this.marketOnBankrupt(p);
     for (const i of this.ownedBy(p.id)) {
       const pr = this.props[i];
       if (pr.houses === 5) this.bankHotels++; else this.bankHouses += pr.houses;
@@ -1175,6 +1179,17 @@ class Game {
       case 'borrow': return this.borrow(p, msg.amount, msg.term, msg.kind);
       case 'deskBuy': return this.deskBuy(p, msg.order || {});
       case 'deskClose': return this.deskClose(p, msg.id);
+      case 'takeAxe': return this.takeAxe(p, msg.axe || {});
+      case 'proposeDeal': return this.proposeDeal(p, msg.deal || {});
+      case 'acceptDeal': return this.respondDeal(p, msg.id, true);
+      case 'rejectDeal': return this.respondDeal(p, msg.id, false);
+      case 'cancelDeal': return this.cancelDeal(p, msg.id);
+      case 'listPosition': return this.listPosition(p, msg.listing || {});
+      case 'buyListing': return this.buyListing(p, msg.id);
+      case 'cancelListing': return this.cancelListing(p, msg.id);
+      case 'postBid': return this.postBid(p, msg.bid || {});
+      case 'fillBid': return this.fillBid(p, msg.id, msg.shares);
+      case 'cancelBid': return this.cancelBid(p, msg.id);
       case 'repay': return this.repay(p, msg.loanId, msg.amount);
       case 'proposeTrade': return this.proposeTrade(p, msg.trade || {});
       case 'acceptTrade': return this.respondTrade(p, msg.id, true);
@@ -1236,11 +1251,13 @@ class Game {
       trades: this.trades.filter((t) => t.status === 'pending' || t.round >= this.round - 3).slice(-40),
       contracts: this.contracts,
       desk: this.deskView(),
+      market: this.marketView(),
       now: this.now(),
     };
   }
 }
 
 require('./desk')(Game, { fail, toInt, toNum, clamp, round2 });
+require('./market')(Game, { fail, toInt, toNum, clamp, round2 });
 
 module.exports = { Game, GameError, DEFAULT_SETTINGS, LOAN_TERMS, CLAUSE_KINDS };
