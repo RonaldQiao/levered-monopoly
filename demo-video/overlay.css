@@ -85,7 +85,7 @@
 
 /* ---------------- intro / outro cards */
 .dCard { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; text-align: center;
-  background: radial-gradient(ellipse at 50% 45%, #0f3b2eee 0, #06191300 0), radial-gradient(ellipse at 50% 40%, #0d3a2dfa 0, #051510fe 70%); transition: opacity .5s; }
+  background: radial-gradient(ellipse at 50% 45%, #0f3b2eee 0, #06191300 0), radial-gradient(ellipse at 50% 40%, #0d3a2d 0, #051510 70%); transition: opacity .5s; }
 .dCard.out { opacity: 0; }
 .dCard .kick { font: 700 15px var(--sans); letter-spacing: .3em; text-transform: uppercase; color: var(--gold); margin-bottom: 18px; }
 .dCard h1 { font: 800 64px/1.08 var(--disp); color: var(--paper); margin: 0 0 18px; letter-spacing: -.005em; }

@@ -209,7 +209,8 @@
   }
 
   // ---------------------------------------------------------------- run
-  push(COLD); updatePanel(COLD);
+  push(COLD); updatePanel(COLD); chapter('Round 28');
+  cap('<em>5 AI agents</em> are playing a property game where they can borrow from a central bank.');
   window.__dbg = { push, updatePanel, CUES, intro, outro, cap, stamp };
   window.__ready = true;
   window.__start = async () => {
