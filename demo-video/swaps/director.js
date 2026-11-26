@@ -220,7 +220,7 @@
     const c = el('div', 'dCard', `<div>
       <div class="kick fade">Policy rate ${F[T.borrow].rate.toFixed(2)}% → ${Math.max(...F.map((f) => f.rate)).toFixed(2)}% · swaps paid you ${fmt(back)}</div>
       <h1 class="fade" style="animation-delay:.1s;font-size:60px">Rates went up. <em>Your cost didn’t.</em></h1>
-      <p class="fade" style="animation-delay:.4s">Unhedged, the loan’s interest rose from <b style="color:#ff8a80">${fmt(g0)}</b> to <b style="color:#ff8a80">${fmt(gMax)}</b> a round. With both swaps you paid a flat <b style="color:var(--gold)">≈${fmt(flat)}</b>.</p>
+      <p class="fade" style="animation-delay:.4s">Unhedged, the loan’s interest rose from <b style="color:#ff8a80">${fmt(loan0)}</b> at signing to <b style="color:#ff8a80">${fmt(gMax)}</b> a round. With both swaps you paid a flat <b style="color:var(--gold)">≈${fmt(flat)}</b>.</p>
       <div class="outroChart fade" style="animation-delay:.6s;width:860px;position:relative"><svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" style="width:860px;height:270px">
         <defs><clipPath id="rev"><rect x="0" y="0" width="0" height="${H}"><animate attributeName="width" from="0" to="${W}" begin="0.7s" dur="2.2s" fill="freeze" calcMode="spline" keySplines=".3 .1 .2 1" keyTimes="0;1"/></rect></clipPath></defs>
         <g clip-path="url(#rev)"><path d="${area}" fill="#5ccb8c30"/>

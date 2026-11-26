@@ -34,7 +34,7 @@ dashboard. It borrows $2,000 floating in the Central Bank tab and builds an inte
 contract builder (pay fixed 2.75%, receive floating, Keynes pledges Canal Street as collateral).
 Keynes's AI prices the contract and signs it. Then the cursor hedges the rest with a pay-fixed swap on the Bank Desk.
 The game then plays on while a rate-hike card and an overheating economy push the policy rate from 1.75% to 4.5%.
-Unhedged, the loan's interest would climb from $52 to $102 a round; with both swaps it stays flat at about $61.
+Unhedged, the loan's interest would climb from $47 at signing to $102 a round; with both swaps it stays flat at about $61.
 
 ```bash
 cd demo-video
