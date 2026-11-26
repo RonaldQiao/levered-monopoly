@@ -80,5 +80,5 @@ node render.js final final/margin-call-twitter-60fps.mp4 60 2   # 60fps, rendere
 
 `render.js` renders deterministically, frame by frame. The page runs on Playwright's fake clock, and every CSS animation
 and transition is paused and stepped to that clock, so each frame lands exactly at 1/60 s. Frames are rendered at 2×
-(2560×1440), then scaled down to 1080p, and piped straight into x264 (CRF 15). A 2-minute video takes about 10 minutes.
+(2560×1440), then scaled down to 1080p, and piped straight into x264 (CRF 15). A 75-second video takes about 5 minutes. Pauses on the fake clock are exact, and live capture used to add about 55 ms of redraw time per move, so the director adds that explicitly to keep the same pacing.
 It works with any director folder, e.g. `node render.js combined out.mp4`.

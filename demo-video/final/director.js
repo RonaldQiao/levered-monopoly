@@ -110,7 +110,7 @@
   let msPer = 100;
   const setSpeed = (ms) => {
     msPer = ms; window.__fast = ms < 90;
-    const x = 1500 / ms;
+    const x = 1500 / (ms + 55); // the real per-move time, including the redraw allowance in the main loop
     if (x >= 6) { spd.textContent = `▶▶ ${x >= 12 ? Math.round(x / 5) * 5 : Math.round(x)}×`; spd.style.opacity = 1; } else spd.style.opacity = 0;
   };
 
@@ -143,7 +143,7 @@
 
   // ---------------------------------------------------------------- the script (frame index → cues)
   const CUES = {
-    0: () => { setSpeed(45); chapter('Rounds 1–5 · land grab'); cap('Round 1. Everyone starts with <em>$1,500</em>. The bank lends up to <em>3× leverage</em>.'); },
+    0: () => { setSpeed(45); chapter('Rounds 1–5 · land grab'); cap('Round 1. Everyone starts with <em>$1,500</em>. The bank lends up to <em>3× leverage</em>.'); return 1400; },
     58: () => { setSpeed(200); chapter('Round 6 · raising equity'); cap(null); },
     [TG.equity]: () => { deal({ ...EQ, foot: 'Sent to Keynes…' }); cap(`Round 6: you want cash to build. You offer <em>20% of yourself</em> to Keynes.`); return 3600; },
     [TG.equityAccept]: () => { deal({ ...EQ, signed: true, foot: '✓ Signed by Keynes’s AI' }); cap(`Keynes’s AI values the stake and pays <em>$${I.equity.up}</em>.`); return 2200; },
@@ -192,7 +192,7 @@
     await sleep(3200); vignette(false);
     spd.textContent = '◀◀ REWIND'; spd.style.background = '#3a6ea5'; spd.style.opacity = 1; chapter('Rewinding');
     cap(null); window.__fast = true;
-    for (let i = 463; i >= 0; i -= 3) { push(i); updatePanel(i); await sleep(8); }
+    for (let i = 463; i >= 0; i -= 3) { push(i); updatePanel(i); await sleep(14); }
     for (const k of Object.keys(prevNw)) delete prevNw[k];
     maxSoFar = 2500; push(0); updatePanel(0);
     spd.style.background = ''; spd.style.opacity = 0;
@@ -235,7 +235,7 @@
       push(i); updatePanel(i);
       let hold = 0;
       if (CUES[i]) hold = (await CUES[i]()) || 0;
-      await sleep(msPer + hold);
+      await sleep(msPer + hold + 55); // +55 ms: the per-move redraw time live capture used to add
     }
     await sleep(600);
     await outro();
