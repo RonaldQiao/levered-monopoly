@@ -1,0 +1,5 @@
+frames*.json
+*_frames/
+*.mp4
+*.png
+*.jpg
