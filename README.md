@@ -144,6 +144,33 @@ In simulation (`sim/REPORT.md`) the Skill test preset plays in about 39 rounds a
 rounds and ~900). Two AI players beat two casual players in 91% of games (classic: about 70%), and
 the gap shows in about 14 games instead of about 115.
 
+## Real-money payouts
+
+An optional lobby toggle for playing for money. When **Real-money payouts** is on, every human declares
+their own stake in dollars in the lobby. $0 means you play for fun: you can neither win nor lose money. AI
+players always stake $0. Stakes lock when the game starts. The host picks one of four payout modes:
+
+| Mode | Weight |
+|---|---|
+| Winner take all | 1 for the last player standing, or the highest net worth if the round cap (or the host) ends the game; ties split |
+| Order of bankruptcy | n−1, n−2, …, 0 by finishing place: survivors ranked by net worth, then players who went out, last out placing highest. Tied places share the average weight |
+| Share payout, capped rounds | share = max(0, net worth) ÷ the sum over all players (bankrupt = 0) |
+| Share³ payout, capped rounds | share³ ÷ Σshare³ |
+
+The two share modes are settled at the round cap, so choosing one sets the game length to 40 rounds if no
+cap is set. If everyone else goes bankrupt first, the survivor's weight is 1.
+
+**Unequal stakes are settled with side pots, as in poker.** The pot is cut into layers at each distinct stake.
+Each layer is funded by every player whose stake reaches it and is split only among those players by their
+weights, renormalised among them. If none of them has any weight, the best-placed of them takes the layer.
+Nobody wins more from an opponent than they risked themselves.
+
+When the game ends (last player standing, round cap, or the host ending it), the game-over screen and the
+log show one row per player: stake, finishing place, net worth, share, payout and net ±$, plus the pot.
+Payouts are rounded down to the cent and each layer's leftover cents go to its top finisher, so they sum to
+the pot exactly. During the game the Players tab shows what the payout would be if the host ended the game
+now. All the arithmetic is one pure function in `src/payout.js`, shared by the server and the browser.
+
 ## AI players
 
 The host can add up to 7 AI players in the lobby. They act through the same rule engine as humans:
@@ -200,6 +227,7 @@ src/cards.js       card decks
 src/engine.js      authoritative rules engine (traditional rules, central bank, economy, contracts)
 src/desk.js        bank desk (shares, options, CDS, insurance, swaps)
 src/pricing.js     shared pricing (Black-Scholes etc.), used by server and browser
+src/payout.js      shared real-money payout settlement (modes, side pots), used by server and browser
 src/bot.js         AI players
 sim/               headless AI-vs-AI simulation harness + rules/skill study (see sim/REPORT.md)
 public/            browser client (vanilla JS, no build step)

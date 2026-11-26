@@ -136,7 +136,7 @@ function renderLobby() {
   $('#lobbyCode').textContent = s.code;
   $('#lobbyUrl').textContent = location.host;
   const host = me && me.host; const set = s.settings;
-  $('#lobbyPlayers').innerHTML = s.players.map((p) => `<li style="border-color:${p.color}"><span style="font-size:20px">${p.token}</span><span>${esc(p.name)}</span>${p.bot ? '<span class="badge">AI</span>' : ''}${p.host ? '<span class="badge">host</span>' : ''}${p.connected ? '' : '<span class="badge warn">offline</span>'}${p.id === S.me ? '<span class="badge good">you</span>' : ''}${p.bot && host ? `<button class="small link" data-act="removeBot" data-target="${p.id}" title="Remove this AI player">remove</button>` : ''}</li>`).join('')
+  $('#lobbyPlayers').innerHTML = s.players.map((p) => `<li style="border-color:${p.color}"><span style="font-size:20px">${p.token}</span><span>${esc(p.name)}</span>${p.bot ? '<span class="badge">AI</span>' : ''}${p.host ? '<span class="badge">host</span>' : ''}${p.connected ? '' : '<span class="badge warn">offline</span>'}${p.id === S.me ? '<span class="badge good">you</span>' : ''}${set.realMoney ? `<span class="badge stake" title="Real-money stake">💵 ${window.Payout.dollars(p.stake || 0)}</span>` : ''}${p.bot && host ? `<button class="small link" data-act="removeBot" data-target="${p.id}" title="Remove this AI player">remove</button>` : ''}</li>`).join('')
     + (host && s.players.length < 8 ? '<li class="add-bot"><button data-act="addBot">+ Add AI player</button></li>' : '');
   const dis = host ? '' : 'disabled';
   const sel = (id, v, opts) => `<select id="${id}" ${dis}>${opts.map(([k, l]) => `<option value="${k}" ${String(k) === String(v) ? 'selected' : ''}>${l}</option>`).join('')}</select>`;
@@ -172,9 +172,64 @@ function renderLobby() {
       creditModel: $('#setCredit').value, neutralRate: $('#setNeutral').value, maxRounds: $('#setRounds').value, liquidation: $('#setLiq').value,
     } });
   }
+  setHTML($('#lobbyPayout'), lobbyPayoutHTML());
   $('#startBtn').disabled = !host || s.players.length < 2;
   $('#startBtn').textContent = host ? (s.players.length < 2 ? 'Need 2+ players' : 'Start game') : 'Waiting for host…';
 }
+
+// ------------------------------------------------------------------ real-money payouts (src/payout.js)
+// Host controls use data-pay (no id) so they always show the server's value; your stake input has an id
+// so setHTML keeps what you are typing across broadcasts.
+function lobbyPayoutHTML() {
+  const s = st(); const me = meP(); const set = s.settings; const P = window.Payout;
+  const dis = me && me.host ? '' : 'disabled';
+  const mode = P.MODES[set.payoutMode] || P.MODES.winner;
+  let h = `<h3>Real-money payouts</h3><div class="settings-grid">
+    <label>Real-money payouts<select data-pay="realMoney" ${dis}><option value="0" ${set.realMoney ? '' : 'selected'}>Off</option><option value="1" ${set.realMoney ? 'selected' : ''}>On (everyone declares a stake)</option></select></label>`;
+  if (set.realMoney) {
+    h += `<label>Payout mode<select data-pay="payoutMode" ${dis}>${P.MODE_KEYS.map((k) => `<option value="${k}" ${k === set.payoutMode ? 'selected' : ''}>${P.MODES[k].label}</option>`).join('')}</select></label>`;
+    if (me && !me.bot) h += `<label>Your stake ($)<input id="myStake" type="number" min="0" max="${P.MAX_STAKE}" step="1" value="${me.stake || 0}" title="$0 = play for fun: you can neither win nor lose money"></label>`;
+  }
+  h += '</div>';
+  if (!set.realMoney) return h;
+  const stakes = Object.fromEntries(s.players.map((p) => [p.id, p.stake || 0]));
+  const pot = s.players.reduce((a, p) => a + (p.stake || 0), 0);
+  const ex = me ? P.exposure(stakes, me.id) : null;
+  return `${h}<p class="muted payout-note">${esc(mode.short)}${mode.needsCap ? ` Settled after round ${set.maxRounds}; if everyone else goes bankrupt first, the survivor takes the pot.` : ''}
+    Pot <b>${P.dollars(pot)}</b>.${ex ? ` You can win at most <b>${P.dollars(ex.maxWin)}</b> and lose at most <b>${P.dollars(ex.maxLoss)}</b>.` : ''}
+    Unequal stakes are settled with side pots, so nobody wins more from an opponent than they staked. AI players stake $0. Stakes lock when the game starts.</p>`;
+}
+
+// The settlement as a table: one row per player, plus the pot.
+function payoutTableHTML(r) {
+  const P = window.Payout;
+  const rows = r.rows.map((row) => {
+    const p = pl(row.id);
+    return `<tr class="${row.bankrupt ? 'dead' : ''}"><td>${p ? p.token : ''} ${esc(row.name || (p && p.name))}${row.bankrupt ? ' ☠' : ''}</td>
+      <td class="n">${P.dollars(row.stake)}</td><td>${P.placeLabel(row)}</td><td class="n">${money(row.netWorth)}</td>
+      <td class="n">${(row.share * 100).toFixed(1)}%</td><td class="n">${P.dollars(row.payout)}</td>
+      <td class="n ${row.net < 0 ? 'neg' : row.net > 0 ? 'pos' : ''}">${P.signed(row.net)}</td></tr>`;
+  }).join('');
+  return `<div class="payout-wrap"><table class="t payout-table">
+    <tr><th>Player</th><th class="n">Stake</th><th>Place</th><th class="n">Net worth</th><th class="n">Share</th><th class="n">Payout</th><th class="n">Net ±$</th></tr>
+    ${rows}<tr class="total"><td><b>Pot</b></td><td class="n"><b>${P.dollars(r.pot)}</b></td><td></td><td></td><td></td><td class="n"><b>${P.dollars(r.rows.reduce((a, x) => a + x.payoutCents, 0) / 100)}</b></td><td></td></tr></table></div>`;
+}
+
+// During play: what the payout would be if the host ended the game now (same function as the server).
+function livePayout() {
+  const s = st();
+  return window.Payout.settle({
+    mode: s.settings.payoutMode, reason: 'host',
+    players: s.players.map((p) => ({ id: p.id, name: p.name, stake: p.stake, netWorth: p.bankrupt ? 0 : p.netWorth, bankrupt: p.bankrupt, out: p.out })),
+  });
+}
+
+document.addEventListener('change', (ev) => {
+  const t = ev.target;
+  if (t.dataset && t.dataset.pay === 'realMoney') act('settings', { settings: { realMoney: t.value === '1' } });
+  else if (t.dataset && t.dataset.pay === 'payoutMode') act('settings', { settings: { payoutMode: t.value } });
+  else if (t.id === 'myStake') act('stake', { amount: t.value === '' ? 0 : Number(t.value) });
+});
 
 // ------------------------------------------------------------------ board (CSS 3D)
 // The board is a CSS 3D scene: a tilted slab with thickness, standing pawns that hop
@@ -363,7 +418,8 @@ function overlayHTML() {
   if (s.status === 'finished') {
     const w = s.winner && pl(s.winner);
     return `<div class="final"><h2>🏆 ${w ? `${w.token} ${esc(w.name)} wins!` : 'Game over'}</h2>
-      <table class="t"><tr><th>Player</th><th class="n">Net worth</th></tr>${s.players.slice().sort((a, b) => b.netWorth - a.netWorth).map((p) => `<tr><td>${p.token} ${esc(p.name)}${p.bankrupt ? ' ☠' : ''}</td><td class="n">${money(p.netWorth)}</td></tr>`).join('')}</table></div>`;
+      ${s.payout ? `<h3 class="payout-head">💵 Real-money payout · ${esc(s.payout.label)}</h3>${payoutTableHTML(s.payout)}`
+    : `<table class="t"><tr><th>Player</th><th class="n">Net worth</th></tr>${s.players.slice().sort((a, b) => b.netWorth - a.netWorth).map((p) => `<tr><td>${p.token} ${esc(p.name)}${p.bankrupt ? ' ☠' : ''}</td><td class="n">${money(p.netWorth)}</td></tr>`).join('')}</table>`}</div>`;
   }
   let h = '';
   if (s.lastCard && s.lastCard.seq !== S.lastCardSeq) { S.lastCardSeq = s.lastCard.seq; S.cardKey = `${s.round}-${s.turn.idx}`; }
@@ -538,6 +594,11 @@ function tabPlayers() {
     </div>`;
   }
   h += `<div class="muted" style="font-size:12px">Bank supply: ${s.bankHouses} houses · ${s.bankHotels} hotels. Net worth = book equity ± equity stakes held/issued.</div>`;
+  if (s.settings.realMoney) {
+    const r = s.payout || livePayout();
+    h += `<h3 class="payout-head">💵 Real-money payout · ${esc(r.label)}</h3>
+      <div class="muted" style="font-size:12px;margin-bottom:4px">${s.payout ? 'Final settlement.' : 'If the game ended now (the host ending it).'}</div>${payoutTableHTML(r)}`;
+  }
   return h;
 }
 
@@ -1160,6 +1221,12 @@ const RULES_HTML = `<div class="rules"><h2>How to play Margin Call</h2>
 <li><b>Risk-priced credit</b>: the credit spread is 1.5% per unit of leverage and re-prices on all your bank debt every round. With a higher <b>neutral rate</b>, borrowing costs about what property earns, so sizing your leverage matters.</li>
 <li><b>Game length</b>: the game ends after that round and the highest net worth wins.</li>
 <li>The <b>Skill test</b> preset sets all of these (draft, sealed bids, seeded dice, no money cards/jail/doubles, risk-priced credit, neutral rate 8%, 40 rounds). The choices come from simulating hundreds of thousands of AI games (sim/REPORT.md).</li>
+</ul>
+<h3>Real-money payouts (lobby option)</h3>
+<ul>
+<li>Every human declares a stake in the lobby ($0 = play for fun). AI players stake $0. Stakes lock when the game starts.</li>
+<li>The host picks a mode: <b>Winner take all</b>; <b>Order of bankruptcy</b> (weights n−1, n−2, …, 0 by finishing place); <b>Share</b> (your share of total net worth at the round cap) or <b>Share³</b> (share³ ÷ Σshare³). Share modes need a round cap; if everyone else goes bankrupt first the survivor takes the pot.</li>
+<li>Unequal stakes are settled with side pots, like poker: each slice of the pot is split only among players who staked at least that much. Nobody wins more from an opponent than they risked themselves.</li>
 </ul>
 <h3>AI players</h3>
 <ul><li>The host can add AI players in the lobby. They play by exactly the same rules, trade, bid, build, borrow and use the bank desk.</li></ul></div>`;
