@@ -40,15 +40,53 @@ module.exports = function installDesk(Game, { fail, toInt, toNum, clamp, round2 
         if (pr.owner === pid) { inc += LAND[i] * r * nOpp; jump2 += nOpp * LAND[i] * r * r; } else { out += LAND[i] * r; jump2 += LAND[i] * r * r; }
       }
       const interest = this.player(pid).loans.reduce((a, l) => a + (l.principal * l.rate) / 100, 0);
-      return { net: inc - out - interest, jump: Math.sqrt(jump2) };
+      return { net: inc - out - interest, gross: inc, jump: Math.sqrt(jump2) };
     },
-    // Book equity plus ~8 rounds of expected net rent, discounted for the chance of default.
-    // (Book equity alone ignores what a built-up colour set will earn, which made monopolists' shares a free lunch.)
+    // What a shareholder owns, valued in two parts (the same two claims a negotiated equity stake has):
+    // - the company: book equity plus ~8 rounds of expected net rent, discounted for the chance of default.
+    //   (Book equity alone ignores what a built-up colour set will earn, which made monopolists' shares a free lunch.)
+    // - the dividends: every share is paid its cut of every rent the player collects (see payDividends):
+    //   the present value of ~12 rounds of expected gross rent per share, discounted at the policy rate plus
+    //   the player's default risk. This is the part that bids up cash-flow names: the more rent a player
+    //   collects, the more their stock pays, and the higher it trades, even when their book value is thin.
     fairValue(pid) {
       const p = this.player(pid);
       if (p.bankrupt) return 0;
-      const v = this.bookEquity(p) + HORIZON * this.rentFlow(pid).net;
-      return Math.max(0, v * (1 - Math.min(0.8, 4 * this.hazard(pid))));
+      const f = this.rentFlow(pid); const h = this.hazard(pid);
+      const company = Math.max(0, (this.bookEquity(p) + HORIZON * f.net) * (1 - Math.min(0.8, 4 * h)));
+      return company + this.dividendValue(f.gross, h);
+    },
+    // Present value of a per-round dividend stream (total over all shares) for dividendHorizon rounds.
+    dividendValue(perRound, h) {
+      if (perRound <= 0) return 0;
+      const r = Math.max(0.005, this.econ.policyRate / 100 + h); const n = DESK.dividendHorizon;
+      return perRound * (1 - (1 + r) ** -n) / r;
+    },
+    // Expected dividend per share per round, from expected gross rent at today's board.
+    expectedDividend(pid) { return this.player(pid).bankrupt ? 0 : this.rentFlow(pid).gross / this.outstanding(pid); },
+
+    // Called after every rent a player collects (after their contract payouts). Every share of the player
+    // held by another player is paid its cut: rent x shares / shares outstanding, the same rule as a
+    // negotiated equity stake (pct% of every rent). The bank waives dividends on shares still in its own
+    // inventory, so nothing changes for a player until someone actually buys their stock. Short sellers owe
+    // the same dividend to the bank on the shares they borrowed. `available` is the rent left after the
+    // player's contract payouts; dividends are scaled down if they would exceed it.
+    payDividends(ownerId, rent, available) {
+      const e = this.desk.equity[ownerId];
+      if (!e || rent <= 0) return;
+      const out = this.outstanding(ownerId); const per = rent / out;
+      e.divThisRound = (e.divThisRound || 0) + per;
+      const longs = this.desk.positions.filter((x) => x.type === 'shares' && x.ref === ownerId && !this.player(x.holder).bankrupt);
+      const due = longs.reduce((a, x) => a + per * x.shares, 0);
+      const scale = due > 0 ? Math.min(1, Math.max(0, available) / due) : 1;
+      for (const x of longs) {
+        const amt = this.pay(ownerId, x.holder, per * x.shares * scale, `dividend on ${x.shares} ${this.ticker(ownerId)} shares`);
+        x.divs = (x.divs || 0) + amt;
+      }
+      for (const x of this.desk.positions.filter((y) => y.type === 'short' && y.ref === ownerId && !this.player(y.holder).bankrupt)) {
+        const amt = this.deskPay(x.holder, null, per * x.shares, `dividend owed on ${x.shares} ${this.ticker(ownerId)} shares shorted`);
+        x.divs = (x.divs || 0) + amt;
+      }
     },
     livePrice(pid) { return this.fairValue(pid) / this.outstanding(pid); },
     // The price every desk trade, payout and valuation uses: fixed once per round (bankrupt = 0).
@@ -63,7 +101,11 @@ module.exports = function installDesk(Game, { fail, toInt, toNum, clamp, round2 
         m.history.push(m.price);
         if (m.history.length > 12) m.history.shift();
         m.vol = this.equityVol(p.id);
-        this.desk.equity[p.id].issuedThisRound = 0;
+        // dividends paid per share over the last round (for trailing yield on the terminal)
+        const e = this.desk.equity[p.id];
+        m.divHist = [...(m.divHist || []), round2(e.divThisRound || 0)].slice(-5);
+        e.divThisRound = 0;
+        e.issuedThisRound = 0;
       }
     },
     // Realised volatility of the marks, combined with the jump risk the board implies (one big rent bill
@@ -437,6 +479,7 @@ module.exports = function installDesk(Game, { fail, toInt, toNum, clamp, round2 
     deskView() {
       const hazards = {}; const insurance = {}; const equity = {}; const live = {};
       for (const p of this.players) {
+        const div = round2(this.expectedDividend(p.id));
         hazards[p.id] = p.bankrupt ? 1 : this.hazard(p.id);
         live[p.id] = p.bankrupt ? 0 : round2(this.livePrice(p.id));
         if (!p.bankrupt) insurance[p.id] = Object.fromEntries(DESK.deductibles.map((d) => [d, this.insuranceQuote(p.id, d)]));
@@ -444,6 +487,7 @@ module.exports = function installDesk(Game, { fail, toInt, toNum, clamp, round2 
         equity[p.id] = {
           ...e, outstanding: this.outstanding(p.id), outside: this.outsideShares(p.id), shortInterest: this.shortInterest(p.id),
           optionExposure: this.optionExposure(p.id), cdsExposure: this.cdsExposure(p.id), cdsCap: p.bankrupt ? 0 : this.cdsCap(p.id),
+          expDividend: div, divHist: (this.desk.marks[p.id] && this.desk.marks[p.id].divHist) || [],
         };
       }
       const inventoryValue = Math.round(this.deskInventoryValue());

@@ -24,6 +24,9 @@ const params = {
   roiMultiple: 2,       // borrow to build only if building ROI > roiMultiple x loan rate
   interestReserve: 0,   // rounds of interest to hold in reserve (0 tested best in sim/tune.js)
   investInLeader: false,
+  dividendInvest: true, // park idle cash in the rival stock paying the most dividend per dollar
+  divHurdle: 1.5,       // ... only if that yield beats divHurdle x the policy rate (per round)
+  divCashMult: 5,       // ... and only with more than divCashMult x its cash reserve on hand (sim: neutral vs not investing)
   draftMode: 'budget',  // 'budget' (below) or 'value' (bid like any auction)
   draftMult: 0.8,       // opening draft: max multiple of list price for any other lot (tuned: sim/tuneDraft.js)
   draftKeyMult: 1.6,    // opening draft: max multiple of list price for a set-completing/blocking lot
@@ -309,6 +312,24 @@ function manage(g, me, m) {
     const inv = leader ? g.desk.equity[leader.id].inv : 0;
     const n = price > 0 ? Math.min(25, 50 - held, inv, Math.floor((me.cash - res * 3) / (price * 1.3))) : 0;
     if (n >= 5) return { action: 'deskBuy', order: { product: 'shares', ref: leader.id, shares: n } };
+  }
+  // 8. Idle cash into the rival stock that pays the most dividend per dollar. Besides the yield, it hedges:
+  // some of every rent you pay that player comes back to you.
+  if (params.dividendInvest && boardSettled && !top && !me.loans.length && me.cash > res * params.divCashMult + g.scale(300) && m.divRound !== g.round) {
+    m.divRound = g.round;
+    let best = null;
+    for (const r of opponents(g, me.id)) {
+      const e = g.desk.equity[r.id]; const ask = g.deal(r.id, 'ask');
+      if (ask <= 0 || e.inv < 5 || g.storedHazard(r.id) > 0.05) continue;
+      const held = g.desk.positions.filter((x) => x.holder === me.id && x.type === 'shares' && x.ref === r.id).reduce((a, x) => a + x.shares, 0);
+      if (held > 45) continue;
+      const y = g.expectedDividend(r.id) / (ask * 1.1);
+      if (y > (g.econ.policyRate / 100) * params.divHurdle && (!best || y > best.y)) best = { r, y, held, ask, inv: e.inv };
+    }
+    if (best) {
+      const n = Math.min(25, 50 - best.held, best.inv, Math.floor((me.cash - res * params.divCashMult) / (best.ask * 1.25)));
+      if (n >= 5) return { action: 'deskBuy', order: { product: 'shares', ref: best.r.id, shares: n } };
+    }
   }
   return null;
 }

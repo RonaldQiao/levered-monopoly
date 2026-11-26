@@ -476,17 +476,20 @@ class Game {
   }
 
   onRentReceived(ownerId, space, amount) {
+    let paid = 0;
     for (const c of this.contracts) {
       if (c.status !== 'active') continue;
       for (const cl of c.clauses) {
         if (cl.from !== ownerId) continue;
         if (cl.kind === 'rentShare' && (cl.spaces.length === 0 || cl.spaces.includes(space))) {
-          this.pay(ownerId, cl.to, amount * cl.pct / 100, `${c.name}: ${cl.pct}% rent share`);
+          paid += this.pay(ownerId, cl.to, amount * cl.pct / 100, `${c.name}: ${cl.pct}% rent share`);
         } else if (cl.kind === 'equity') {
-          this.pay(ownerId, cl.to, amount * cl.pct / 100, `${c.name}: ${cl.pct}% equity dividend`);
+          paid += this.pay(ownerId, cl.to, amount * cl.pct / 100, `${c.name}: ${cl.pct}% equity dividend`);
         }
       }
     }
+    // Shares bought on the open market (bank desk or player market) pay dividends the same way.
+    if (this.desk) this.payDividends(ownerId, amount, amount - paid);
   }
 
   // ---------------------------------------------------------------- movement

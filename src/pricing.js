@@ -44,6 +44,7 @@
     axeShareDiscount: 0.02, // bank sells excess inventory below its mark
     axeRiskDiscount: 0.03,  // ... a bit more when the name is getting riskier
     axeCdsRate: 1.15,       // bank buys protection back at notional x hazard x 1.15 (it sells at 1.3)
+    dividendHorizon: 12,    // a share is worth at least ~12 rounds of its expected dividends, discounted
   };
 
   // Abramowitz & Stegun 26.2.17, |error| < 7.5e-8

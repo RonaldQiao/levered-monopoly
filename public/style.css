@@ -476,3 +476,8 @@ table.t tr.dead { opacity: .45; }
 /* host AI-speed control */
 .ai-speed { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 13px; }
 .ai-speed select { width: auto; }
+
+/* bank desk equity board: tight enough for the sidebar */
+.eqboard { font-size: 12.5px; }
+.eqboard td, .eqboard th { padding: 4px 4px; }
+.eqboard small { font-size: 11px; }

@@ -201,7 +201,8 @@ function terminalHTML() {
       <div class="tm-stats">
         <div><span>BID/ASK</span>$${bid1.toFixed(2)} / $${ask1.toFixed(2)}</div><div><span>VOL/RD</span>${(m.vol * 100).toFixed(0)}%</div><div><span>DEFAULT RISK</span>${(hz * 100).toFixed(1)}%</div>
         <div><span>BOOK EQUITY</span>${money(r.equity)}</div><div><span>SHARES OUT</span>${eq.outstanding}</div><div><span>FLOAT LEFT</span>${eq.inv}/${eq.outside}</div>
-        <div><span>SHORT INT.</span>${eq.shortInterest}/${eq.float}</div><div><span>INSIDER</span>${Math.round((100 * eq.insider) / eq.outstanding)}%</div><div><span>OPT BOOK</span>${eq.optionExposure}/100</div></div>
+        <div><span>SHORT INT.</span>${eq.shortInterest}/${eq.float}</div><div><span>INSIDER</span>${Math.round((100 * eq.insider) / eq.outstanding)}%</div><div><span>OPT BOOK</span>${eq.optionExposure}/100</div>
+        <div><span>DIV/SH/RD</span>${(eq.expDividend || 0).toFixed(2)}</div><div><span>DIV YIELD</span>${m.price ? ((100 * (eq.expDividend || 0)) / m.price).toFixed(1) : '0.0'}%/rd</div><div><span>PAID LAST 5</span>${(eq.divHist || []).reduce((a, b) => a + b, 0).toFixed(2)}/sh</div></div>
       <div class="tm-sub">PRICE · MARKED EACH ROUND</div>${tmChart(m.history, (v) => `$${v.toFixed(2)}`)}`;
     // order book
     const axe = (desk.axes || []).find((a) => a.kind === 'shares' && a.ref === r.id);
