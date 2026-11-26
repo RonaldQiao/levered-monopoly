@@ -61,3 +61,24 @@ node combined/scan.js 120             # games where You hedges, rates rise and Y
 node combined/rec.js                  # record seed 81 -> combined/frames81.json
 node capture.js take1 combined && ./encode.sh combined/take1 combined/margin-call-twitter.mp4
 ```
+
+## Final cut: more features, 60fps (`final/`, `render.js`)
+
+You vs 4 AI agents again (seed 133), now with four finance moves, each shown as a term-sheet card:
+
+* **Raise equity (round 6):** Keynes's AI pays $350 for 20% of your rent income and book equity. The video also shows what that costs you in dividends.
+* **Hedge (round 12):** borrow $2,000 floating, then a swap with Volcker (East Ferry Terminal pledged as collateral) plus a desk swap.
+* **Credit bets (round 14):** a $1,000 CDS and a put on Minsky, bought from the bank desk once Minsky's default risk hits 7.5% a round.
+* The payoffs all happen in the game: Minsky goes bust and the CDS and put pay out, rates rise and the swaps pay, Volcker defaults on the swap and the collateral is seized, and Keynes goes bust, which ends the stake. You win.
+
+```bash
+cd demo-video
+node combined/scan2.js 1 150            # search seeds for all four moves paying off
+node final/rec.js                       # record seed 133 -> final/frames133.json
+node render.js final final/margin-call-twitter-60fps.mp4 60 2   # 60fps, rendered at 2x then scaled to 1080p
+```
+
+`render.js` renders deterministically, frame by frame. The page runs on Playwright's fake clock, and every CSS animation
+and transition is paused and stepped to that clock, so each frame lands exactly at 1/60 s. Frames are rendered at 2×
+(2560×1440), then scaled down to 1080p, and piped straight into x264 (CRF 15). A 2-minute video takes about 10 minutes.
+It works with any director folder, e.g. `node render.js combined out.mp4`.

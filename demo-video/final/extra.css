@@ -1,0 +1,29 @@
+/* Combined cut: the term-sheet card for the swap, and the "hedged" badge. */
+.dBadge.dB-hedge { background: #0e3323; color: #b7f0cf; border: 1px solid var(--good); }
+#dDeal { position: fixed; left: 0; right: 430px; top: 96px; z-index: 47; display: flex; justify-content: center; pointer-events: none; }
+#dDeal .dDealCard { display: block; width: 520px; background: linear-gradient(160deg, #0b2019f7, #0f2c23f2); border: 1px solid #ffffff22; border-radius: 16px; padding: 18px 22px 16px;
+  box-shadow: 0 24px 60px #000c, 0 0 0 1px #0006; position: relative; overflow: hidden; animation: aIn .55s cubic-bezier(.2,.9,.25,1) both; }
+#dDeal .dDealCard.out { animation: aOut .4s ease forwards; }
+#dDeal .dDealCard::before { content: ''; position: absolute; left: 0; top: 0; right: 0; height: 4px; background: linear-gradient(90deg, var(--gold), #e8c76c00); }
+#dDeal .k { font: 700 12px var(--sans); letter-spacing: .2em; text-transform: uppercase; color: var(--gold); }
+#dDeal .pt { display: flex; align-items: center; gap: 14px; font: 800 30px/1.2 var(--disp); color: var(--paper); margin: 6px 0 10px; }
+#dDeal .pt i { font-style: normal; color: var(--gold); font-size: 26px; }
+#dDeal .rw { display: flex !important; display: flex; justify-content: space-between; gap: 16px; padding: 7px 0; border-top: 1px solid #ffffff14; font: 500 16px var(--sans); color: #a9b8ad; animation: up .4s both; }
+#dDeal .rw:nth-of-type(3) { animation-delay: .15s; } #dDeal .rw:nth-of-type(4) { animation-delay: .3s; } #dDeal .rw:nth-of-type(5) { animation-delay: .45s; } #dDeal .rw:nth-of-type(6) { animation-delay: .6s; }
+#dDeal .rw b { color: var(--paper); font-weight: 700; }
+#dDeal .sg { margin-top: 10px; font: 700 15px var(--sans); color: #a9b8ad; }
+#dDeal .dDealCard.signed { animation: none; border-color: #5ccb8c88; box-shadow: 0 24px 60px #000c, 0 0 0 1px #5ccb8c55, 0 0 30px #5ccb8c30; }
+#dDeal .dDealCard.signed .rw { animation: none; }
+#dDeal .dDealCard.signed .sg { color: #7af0ad; animation: pop .45s cubic-bezier(.2,1.4,.4,1) both; }
+@keyframes pop { from { transform: scale(.7); opacity: 0; } to { transform: none; opacity: 1; } }
+
+/* final cut: outro P&L chips and chart reveal (CSS, so the frame-by-frame renderer can step it) */
+.chips4 { display: flex; gap: 12px; justify-content: center; margin: 4px auto 0; }
+.chips4 .ch { display: grid; grid-template-columns: auto 1fr; grid-template-rows: auto auto; column-gap: 10px; align-items: center; text-align: left;
+  background: #0f3027; border: 1px solid #2f5747; border-radius: 12px; padding: 10px 16px 10px 12px; }
+.chips4 .ch i { grid-row: span 2; font-style: normal; font-size: 26px; }
+.chips4 .ch small { font: 700 11px var(--sans); letter-spacing: .12em; text-transform: uppercase; color: #9fb2a6; }
+.chips4 .ch b { font: 800 21px var(--disp); color: var(--paper); font-variant-numeric: tabular-nums; }
+.chips4 .ch.g b { color: #7af0ad; } .chips4 .ch.r b { color: #ff8a80; }
+.dReveal { animation: reveal 2.4s cubic-bezier(.3,.1,.2,1) .7s both; }
+@keyframes reveal { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0 0 0 0); } }
