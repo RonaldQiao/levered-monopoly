@@ -69,14 +69,18 @@ V.draft = {
   post: (g) => {
     const order = Object.keys(g.props).map(Number);
     for (let k = order.length - 1; k > 0; k--) { const j = Math.floor(g.rng() * (k + 1)); [order[k], order[j]] = [order[j], order[k]]; }
-    g.draftQueue = order;
+    g.draftQueue = order; // read by sim/skills.js to detect the draft
     const close = g.closeAuction.bind(g);
+    // Open each lot through the engine so the auction has the shape the engine expects (lots, kind, bids...).
+    // This variant keeps its original open ascending format (or sealed, if the settings say so); the engine's
+    // own opening draft (settings.acquisition = 'draft') is always sealed and is measured separately.
     const open = () => {
       const i = g.draftQueue.shift();
       if (i === undefined) return;
-      g.auction = { space: i, highBid: 0, highBidder: null, active: g.active().map((x) => x.id), deadline: g.now() + 25000 };
+      g.openAuction(i);
     };
-    g.closeAuction = () => { close(); if (g.draftQueue.length && g.status === 'playing') open(); };
+    // A distressed-sale auction the engine queued may open as a lot closes; never overwrite it.
+    g.closeAuction = () => { close(); if (g.draftQueue.length && g.status === 'playing' && !g.auction) open(); };
     open();
   },
 };
