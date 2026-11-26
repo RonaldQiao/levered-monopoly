@@ -6,6 +6,7 @@ const assert = require('node:assert');
 const { Game, GameError, PRESETS } = require('../src/engine');
 const bot = require('../src/bot');
 const { EVENT_CARDS, TREASURY_CARDS } = require('../src/cards');
+const Pricing = require('../src/pricing');
 
 function seeded(seed) {
   let s = seed >>> 0;
@@ -161,16 +162,23 @@ test('desk deals at the worse of mark and live price: stale-quote arbitrage does
   const live = g.livePrice(b.id);
   assert.ok(live > mark);
   const c0 = a.cash;
+  const askPx = g.deal(b.id, 'ask');
+  assert.strictEqual(askPx, Math.round(live * 100) / 100, 'dealt at the live (higher) price');
   g.deskBuy(a, { product: 'shares', ref: b.id, shares: 20 });
-  assert.strictEqual(c0 - a.cash, Math.ceil(live * 20 * 1.03), 'bought at the live (higher) price');
+  const paid = c0 - a.cash;
+  assert.strictEqual(paid, Pricing.shareAskCost(askPx, 20, 25, 25), 'bought at the live price + spread + scarcity');
   // after the re-mark the position is worth less than it cost (spread), never a free profit
   g.markEquity();
   assert.ok(g.deskValue(a) < c0 - a.cash);
   // pump-and-dump inside a round doesn't pay either: selling uses the lower of mark and live
   b.cash -= 2000;
   const pos = g.desk.positions.find((x) => x.holder === a.id);
+  const bidPx = g.deal(b.id, 'bid');
+  assert.strictEqual(bidPx, Math.round(Math.min(g.desk.marks[b.id].price, g.livePrice(b.id)) * 100) / 100);
+  const expected = Pricing.shareBidProceeds(bidPx, 20, g.desk.equity[b.id].inv, g.outsideShares(b.id), g.storedHazard(b.id));
   const c1 = a.cash; g.deskClose(a, pos.id);
-  assert.strictEqual(a.cash - c1, Math.floor(Math.min(g.desk.marks[b.id].price, g.livePrice(b.id)) * 20 * 0.97));
+  assert.strictEqual(a.cash - c1, expected);
+  assert.ok(a.cash - c1 < paid, 'the round trip loses money');
 });
 
 test('no CDS or puts on a player already in distress; swaps have no free carry and a total cap', () => {

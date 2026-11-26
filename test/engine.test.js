@@ -249,6 +249,7 @@ test('fuzz: random full games never throw unexpected errors', () => {
           { product: 'cds', ref: other.id, notional: 300, term: pick([5, 10]) },
           { product: 'insurance', deductible: pick([100, 250, 500]), term: 10 },
           { product: 'swap', side: pick(['payFixed', 'receiveFixed']), notional: 500, term: 5 },
+          { product: 'issue', shares: 1 + Math.floor(rng() * 10) },
         ]);
         tryA(any.id, { action: 'deskBuy', order });
         const mineD = g.desk.positions.filter((x) => x.holder === any.id);

@@ -105,6 +105,7 @@ function render() {
   renderBoard();
   renderTabs();
   renderTab();
+  if (typeof renderTerminal === 'function') renderTerminal();
   const key = `${s.round}-${s.turn.idx}`;
   if (key !== S.lastTurnKey) {
     S.lastTurnKey = key;
@@ -528,7 +529,7 @@ function tabPlayers() {
         <div><span>Bank debt</span>${money(p.bankDebt)}</div>
         <div><span>Mortgages</span>${money(p.mortgageDebt)}</div>
         <div><span>Leverage</span>${p.leverage == null ? '∞' : `${p.leverage.toFixed(2)}×`}</div>
-        <div><span>Share price</span>${s.desk.marks[p.id] ? `$${s.desk.marks[p.id].price.toFixed(2)}` : '—'}</div>
+        <div><span>Share price · stake</span>${s.desk.marks[p.id] ? `${s.desk.marks[p.id].price.toFixed(2)} · ${Math.round((100 * s.desk.equity[p.id].insider) / s.desk.equity[p.id].outstanding)}%` : '—'}</div>
         <div><span>Desk positions</span>${money(p.deskValue || 0)}</div>
         <div><span>Default risk</span>${p.bankrupt ? '—' : pct((s.desk.hazards[p.id] || 0) * 100, 1)}</div>
       </div>
@@ -606,17 +607,18 @@ function tabBank() {
   h += '<div class="box"><h4>Your loans</h4>';
   if (!me.loans.length) h += '<p class="muted">No outstanding loans.</p>';
   else {
-    h += `<table class="t"><tr><th class="n">Principal</th><th>Type</th><th class="n">Rate</th><th class="n">Interest/rd</th><th>Matures</th><th></th></tr>${me.loans.map((l) => `
-      <tr><td class="n">${plain$(l.principal)}</td><td>${l.kind === 'floating' ? 'floating' : 'fixed'}</td><td class="n">${pct(l.rate)}</td><td class="n">${plain$(Math.max(1, Math.round(l.principal * l.rate / 100)))}</td><td>round ${l.maturity}</td>
+    h += `<table class="t"><tr><th class="n">Principal</th><th>Type</th><th class="n">Rate</th><th class="n">Interest/rd</th><th>Matures</th><th class="n">Repay $100 costs</th><th></th></tr>${me.loans.map((l) => `
+      <tr><td class="n">${plain$(l.principal)}</td><td>${l.kind === 'floating' ? 'floating' : 'fixed'}</td><td class="n">${pct(l.rate)}</td><td class="n">${plain$(Math.max(1, Math.round(l.principal * l.rate / 100)))}</td><td>round ${l.maturity}</td><td class="n ${l.prepay100 < 100 ? 'pos' : l.prepay100 > 101 ? 'neg' : ''}">${plain$(l.prepay100)}</td>
       <td><div class="row" style="flex-wrap:nowrap"><input id="rp-${l.id}" type="number" style="width:80px" placeholder="${l.principal}"><button class="small" data-act="repay" data-loan="${l.id}">repay</button></div></td></tr>`).join('')}</table>`;
   }
-  h += '</div>';
+  h += `<p class="muted" style="font-size:12px;margin-bottom:0">Floating loans repay at par. Fixed loans repay at <b>market value + 0.5%</b>: below par if rates have risen since you borrowed (a real gain), above par (a make-whole premium) if they have fallen. Market gain on your fixed loans right now: <b>${money(me.loanMtmGain || 0)}</b>, counted in net worth but not in your borrowing limit.</p></div>`;
   return h;
 }
 
 // ------------------------------------------------------------------ bank desk
 const DESK_PRODUCTS = {
-  shares: 'Buy shares', call: 'Call option', put: 'Put option', cds: 'Credit default swap', insurance: 'Rent insurance', swap: 'Interest-rate swap',
+  shares: 'Buy shares (from the float)', short: 'Short shares', issue: 'Issue my own shares', call: 'Call option', put: 'Put option',
+  cds: 'Credit default swap', insurance: 'Rent insurance', swap: 'Interest-rate swap',
 };
 S.dk = { product: 'shares', ref: null, shares: 10, strike: '', term: 10, notional: 500, deductible: 250, side: 'payFixed' };
 
@@ -627,17 +629,45 @@ function deskQuote() {
   const mark = d.ref && desk.marks[d.ref];
   const n = Math.max(0, Math.floor(Number(d.shares) || 0));
   switch (d.product) {
-    case 'shares': { if (!mark) return ''; const ask = dealPx(d.ref, 'ask'); const bid = dealPx(d.ref, 'bid'); return `Cost ${plain$(P.shareAsk(ask, n))} for ${n} shares at $${ask.toFixed(2)} + 3% spread · sell back at $${(bid * 0.97).toFixed(2)}/share (desk deals at the worse of the round mark and the live price)`; }
+    case 'shares': {
+      if (!mark) return '';
+      const e = desk.equity[d.ref];
+      if (n > e.inv) return `Only ${e.inv} of ${pl(d.ref).name}'s shares are available from the bank. More exist only if ${esc(pl(d.ref).name)} issues them.`;
+      const px = dealPx(d.ref, 'ask');
+      const cost = P.shareAskCost(px, n, e.inv, e.outside);
+      return `Cost ${plain$(cost)} for ${n} shares (dealt at ${px.toFixed(2)}, the higher of mark and live; avg $${(cost / Math.max(1, n)).toFixed(2)} incl. spread and scarcity) · ${e.inv - n} left in the float afterwards`;
+    }
+    case 'short': {
+      if (!mark) return '';
+      const e = desk.equity[d.ref]; const left = e.float - e.shortInterest;
+      if (n > left) return `Only ${left} ${esc(pl(d.ref).name)} shares are left to borrow.`;
+      const proceeds = P.shareBidProceeds(dealPx(d.ref, 'bid'), n, e.inv, e.outside, mark.hazard || 0);
+      const cover = P.shareAskCost(dealPx(d.ref, 'ask'), n, e.inv, e.outside);
+      const fee = Math.max(1, Math.round(n * mark.price * (P.DESK.shortFeeBase + P.DESK.shortFeeHazard * (mark.hazard || 0))));
+      return `You receive ${plain$(proceeds)} now · covering today would cost ${plain$(cover)} · borrow fee about ${plain$(fee)} a round · ${left - n} left to borrow`;
+    }
+    case 'issue': {
+      const m = desk.marks[S.me]; const e = desk.equity[S.me];
+      const proceeds = P.issueProceeds(m.price, n, e.outstanding, desk.hazards[S.me]);
+      return `The bank pays ${plain$(proceeds)} for ${n} new shares (mark $${m.price.toFixed(2)}, $${(proceeds / Math.max(1, n)).toFixed(2)} each) · you'd own ${e.insider} of ${e.outstanding + n} shares (${((100 * e.insider) / (e.outstanding + n)).toFixed(1)}%)`;
+    }
     case 'call': case 'put': {
       if (!mark) return '';
       const S0 = dealPx(d.ref, d.product === 'call' ? 'ask' : 'bid');
       const K = Number(d.strike || mark.price.toFixed(2));
-      const prem = P.optionPremium(d.product, S0, K, Number(d.term), s.econ.policyRate, mark.vol, n);
-      const be = d.product === 'call' ? K + prem / Math.max(1, n) : K - prem / Math.max(1, n);
-      return `Premium ${plain$(prem)} · strike $${K.toFixed(2)} vs price $${S0.toFixed(2)} · vol ${(mark.vol * 100).toFixed(0)}%/round · breakeven $${be.toFixed(2)}/share`;
+      const T = Number(d.term);
+      const ask = P.optionAsk(d.product, S0, K, T, s.econ.policyRate, mark.vol, n);
+      const fair = P.fairOption(d.product, S0, K, T, s.econ.policyRate, mark.vol, n);
+      const bid = P.optionBid(d.product, dealPx(d.ref, d.product === 'call' ? 'bid' : 'ask'), K, T, s.econ.policyRate, mark.vol, n);
+      const be = d.product === 'call' ? K + ask / Math.max(1, n) : K - ask / Math.max(1, n);
+      return `Premium ${plain$(ask)} (fair ${plain$(fair)}, bank buys back today at ${plain$(bid)}) · vol ${(mark.vol * 100).toFixed(0)}%/round · breakeven $${be.toFixed(2)}/share`;
     }
-    case 'cds': return d.ref ? `Premium ${plain$(P.cdsPremium(Number(d.notional) || 0, desk.hazards[d.ref]))} per round (first one now) · pays ${plain$(Number(d.notional) || 0)} if ${esc(pl(d.ref).name)} goes bankrupt · est. default risk ${(desk.hazards[d.ref] * 100).toFixed(1)}%/round` : '';
-    case 'insurance': { const q = desk.insurance[S.me] && desk.insurance[S.me][d.deductible]; return `Premium ${plain$(q || 0)} per round (first one now) · covers 80% of any rent above ${plain$(d.deductible)}, up to $1,500 a claim`; }
+    case 'cds': {
+      if (!d.ref) return '';
+      const e = desk.equity[d.ref]; const h = desk.hazards[d.ref];
+      return `Premium ${plain$(P.cdsPremium(Number(d.notional) || 0, h))} per round, fixed (first one now) · pays ${plain$(Number(d.notional) || 0)} if ${esc(pl(d.ref).name)} goes bankrupt · default risk ${(h * 100).toFixed(1)}%/round · bank capacity left ${plain$(Math.max(0, e.cdsCap - e.cdsExposure))}`;
+    }
+    case 'insurance': { const q = desk.insurance[S.me] && desk.insurance[S.me][d.deductible]; return `This round's premium ${plain$(q || 0)} (re-priced every round from where you stand) · covers 80% of any rent above ${plain$(d.deductible)}, up to $1,500 a claim`; }
     case 'swap': {
       const fx = desk.swapRates[d.term][d.side]; const net = Math.round((Number(d.notional) || 0) * (s.econ.policyRate - fx) * (d.side === 'payFixed' ? 1 : -1) / 100);
       return `${d.side === 'payFixed' ? 'You pay' : 'You receive'} fixed ${pct(fx)} and ${d.side === 'payFixed' ? 'receive' : 'pay'} the policy rate (${pct(s.econ.policyRate)}) on ${plain$(Number(d.notional) || 0)} · net today ${net >= 0 ? '+' : ''}${plain$(net)}/round`;
@@ -646,34 +676,46 @@ function deskQuote() {
   }
 }
 
+function positionQuote(x) {
+  const s = st(); const P = window.Pricing; const desk = s.desk; const m = x.ref && desk.marks[x.ref];
+  if (x.type === 'shares') { const e = desk.equity[x.ref]; return P.shareBidProceeds(dealPx(x.ref, 'bid'), x.shares, e.inv, e.outside, m.hazard || 0); }
+  if (x.type === 'call' || x.type === 'put') return P.optionBid(x.type, dealPx(x.ref, x.type === 'call' ? 'bid' : 'ask'), x.strike, Math.max(0, x.expiry - s.round), s.econ.policyRate, m.vol, x.shares);
+  return 0;
+}
+
 function tabDesk() {
   const s = st(); const me = meP(); const desk = s.desk;
   if (!me) return '';
   const rivals = s.players.filter((p) => !p.bankrupt && p.id !== S.me);
   if (!S.dk.ref || !rivals.some((p) => p.id === S.dk.ref)) S.dk.ref = rivals[0]?.id || null;
   const d = S.dk;
-  let h = `<p class="muted" style="font-size:12.5px;margin-top:0">Trade with the central bank's desk. Each player's balance sheet is split into 100 shares priced at <b>book equity ÷ 100</b>, marked at the start of every round. The desk deals at the <b>worse of the mark and the live price</b> for you, so stale prices and intra-round pumps don't pay.</p>`;
-  h += `<div class="box"><h4>Equity board</h4><table class="t"><tr><th>Player</th><th class="n">Mark</th><th class="n">Live</th><th class="n">Δ round</th><th class="n">Vol</th><th class="n">Default risk</th></tr>
-    ${s.players.map((p) => { const m = desk.marks[p.id]; if (!m) return ''; const prev = m.history.length > 1 ? m.history[m.history.length - 2] : m.price; const ch = prev ? (m.price / prev - 1) * 100 : 0;
-      return `<tr class="${p.bankrupt ? 'dead' : ''}"><td>${p.token} ${esc(p.name)}</td><td class="n">$${m.price.toFixed(2)}</td><td class="n">$${(desk.live[p.id] ?? m.price).toFixed(2)}</td><td class="n ${ch > 0 ? 'pos' : ch < 0 ? 'neg' : ''}">${ch >= 0 ? '+' : ''}${ch.toFixed(1)}%</td><td class="n">${(m.vol * 100).toFixed(0)}%</td><td class="n">${p.bankrupt ? 'defaulted' : pct((desk.hazards[p.id] || 0) * 100, 1)}</td></tr>`; }).join('')}</table></div>`;
-  const needsRef = ['shares', 'call', 'put', 'cds'].includes(d.product);
+  const myEq = desk.equity[S.me];
+  let h = `<div class="row" style="margin-bottom:8px"><button class="primary" data-open-terminal>📈 Open market terminal</button></div><p class="muted" style="font-size:12.5px;margin-top:0">The central bank makes the market. It values each player at book equity plus about 8 rounds of expected rent, less a discount for default risk, re-marks once a round, and quotes around that with a spread. It deals at the <b>worse of the round's mark and the live price</b> for you, so stale quotes and intra-round pumps don't pay. Every player has <b>100 shares of their own plus ${myEq.float} in a float</b> the bank holds; once the float is bought up, more shares exist only if that player issues them.</p>`;
+  h += `<div class="box"><h4>Equity board</h4><table class="t"><tr><th>Player</th><th class="n">Mark</th><th class="n">Live</th><th class="n">Δ round</th><th class="n">Float left</th><th class="n">Vol</th><th class="n">Default risk</th></tr>
+    ${s.players.map((p) => { const m = desk.marks[p.id]; const e = desk.equity[p.id]; if (!m) return ''; const prev = m.history.length > 1 ? m.history[m.history.length - 2] : m.price; const ch = prev ? (m.price / prev - 1) * 100 : 0;
+      return `<tr class="${p.bankrupt ? 'dead' : ''}"><td>${p.token} ${esc(p.name)}</td><td class="n">${m.price.toFixed(2)}</td><td class="n">${(desk.live[p.id] ?? m.price).toFixed(2)}</td><td class="n ${ch > 0 ? 'pos' : ch < 0 ? 'neg' : ''}">${ch >= 0 ? '+' : ''}${ch.toFixed(1)}%</td><td class="n">${e.inv}/${e.outside}</td><td class="n">${(m.vol * 100).toFixed(0)}%</td><td class="n">${p.bankrupt ? 'defaulted' : pct((desk.hazards[p.id] || 0) * 100, 1)}</td></tr>`; }).join('')}</table>
+    <p class="muted" style="font-size:12px;margin:6px 0 0">You own ${myEq.insider} of your ${myEq.outstanding} shares (${((100 * myEq.insider) / myEq.outstanding).toFixed(1)}%); net worth counts only your share of your own equity.</p></div>`;
+  const needsRef = ['shares', 'short', 'call', 'put', 'cds'].includes(d.product);
   const f = [];
   f.push(`<label>Product<select id="dkProduct">${Object.entries(DESK_PRODUCTS).map(([k, l]) => `<option value="${k}" ${d.product === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label>`);
   if (needsRef) f.push(`<label>On player<select id="dkRef">${rivals.map((p) => `<option value="${p.id}" ${d.ref === p.id ? 'selected' : ''}>${p.token} ${esc(p.name)}</option>`).join('')}</select></label>`);
-  if (['shares', 'call', 'put'].includes(d.product)) f.push(`<label>Shares (max 50)<input id="dkShares" type="number" min="1" max="50" value="${d.shares}"></label>`);
+  if (['shares', 'short', 'call', 'put', 'issue'].includes(d.product)) f.push(`<label>Shares (max ${d.product === 'issue' ? 25 : 50})<input id="dkShares" type="number" min="1" max="50" value="${d.shares}"></label>`);
   if (['call', 'put'].includes(d.product)) f.push(`<label>Strike $/share<input id="dkStrike" type="number" min="0" step="0.5" placeholder="${desk.marks[d.ref] ? desk.marks[d.ref].price.toFixed(2) : ''}" value="${d.strike}"></label>`);
   if (['cds', 'swap'].includes(d.product)) f.push(`<label>Notional $<input id="dkNotional" type="number" min="50" step="50" value="${d.notional}"></label>`);
   if (d.product === 'swap') f.push(`<label>Side<select id="dkSide"><option value="payFixed" ${d.side === 'payFixed' ? 'selected' : ''}>Pay fixed, receive floating</option><option value="receiveFixed" ${d.side === 'receiveFixed' ? 'selected' : ''}>Receive fixed, pay floating</option></select></label>`);
   if (d.product === 'insurance') f.push(`<label>Deductible<select id="dkDeductible">${[100, 250, 500].map((x) => `<option value="${x}" ${Number(d.deductible) === x ? 'selected' : ''}>$${x}</option>`).join('')}</select></label>`);
-  if (d.product !== 'shares') f.push(`<label>Term<select id="dkTerm">${[5, 10, 20].map((t) => `<option value="${t}" ${Number(d.term) === t ? 'selected' : ''}>${t} rounds</option>`).join('')}</select></label>`);
+  if (!['shares', 'short', 'issue'].includes(d.product)) f.push(`<label>Term<select id="dkTerm">${[5, 10, 20].map((t) => `<option value="${t}" ${Number(d.term) === t ? 'selected' : ''}>${t} rounds</option>`).join('')}</select></label>`);
   const help = {
-    shares: 'Bet that a rival\'s equity grows. Buy at the higher of mark and live price + 3%, sell any time at the lower − 3%. Worthless if they go bankrupt.',
-    call: 'Right to cash in (price − strike) × shares at any time before expiry. Priced with Black-Scholes using the player\'s own volatility.',
-    put: 'Pays (strike − price) × shares. A bankruptcy pays the full strike, so it doubles as protection. Not sold on a player already below $0.',
-    cds: 'Credit protection: pay a premium each round; the bank pays the notional if that player goes bankrupt. Not sold on a player already below $0.',
-    insurance: 'Insure yourself against a ruinous rent bill. Priced from the rents on the board right now — buy before the hotels go up.',
-    swap: 'Bet on (or hedge) the policy rate. The fixed rate is the expected policy path ± 0.1%. Settled every round; total swap notional is capped at your desk limit; close early at mark-to-market − 1%.',
+    shares: 'Buy part of a rival from the bank\'s float. The ask rises as the float runs out; the bank buys back below the mark, and pays less for a player in distress. Worthless if they go bankrupt.',
+    short: 'Bet against a rival: borrow their shares from the bank and sell them now; buy them back later to close. You pay a borrow fee every round (higher for riskier players), the short counts as a liability in your equity — so a rising price can bring a margin call — and if they go bankrupt it closes for free. At most 25 shares per player, and only as many as the float allows.',
+    issue: 'Raise cash by selling new shares of yourself to the bank. It is not debt, so it doesn\'t use up borrowing room, but you own a smaller slice of yourself. The bank pays below the mark, less for bigger issues, and nothing at all once your default risk passes 12% a round. Up to 25 shares a round.',
+    call: 'Pays (price − strike) × shares. Priced with Black-Scholes using the player\'s share history plus the rent shocks the board implies. Sell it back to the bank any time at fair value less 10%.',
+    put: 'Pays (strike − price) × shares, and the full strike if the player goes bankrupt. Sell it back any time at fair value less 10%. Not sold on a player already below $0.',
+    cds: 'The bank pays the notional if that player goes bankrupt. The premium is fixed when you buy. Not sold on a player already below $0. The bank stops selling protection once default risk passes 20% a round, and caps total protection on one player at about 1.5× their equity.',
+    insurance: 'Covers a ruinous rent bill. Re-priced every round from the square you stand on and the rents ahead, so it\'s cheap in quiet stretches and expensive in front of hotels.',
+    swap: 'Bet on (or hedge) the policy rate. The fixed rate is the bank\'s forecast of the average policy rate (no term premium, so neither side earns free carry) ± 0.1%. Settled every round; total swap notional is capped at your desk limit; close early at mark-to-market − 1%.',
   }[d.product];
+  h += axesHTML() + playerMarketHTML();
   h += `<div class="box"><h4>New order</h4><div class="fields-grid">${f.join('')}</div>
     <p class="muted" style="font-size:12px">${help}</p>
     <div class="quote" id="dkQuote">${deskQuote()}</div>
@@ -682,19 +724,21 @@ function tabDesk() {
   h += '<div class="box"><h4>Your desk positions</h4>';
   if (!mine.length) h += '<p class="muted">None.</p>';
   else {
-    h += `<table class="t"><tr><th>Position</th><th class="n">Value / flow</th><th></th></tr>${mine.map((x) => {
-      const m = x.ref && desk.marks[x.ref]; const ref = x.ref ? `${pl(x.ref).token} ${esc(pl(x.ref).name)}` : '';
-      let desc = ''; let val = ''; let btn = 'close';
-      void m;
-      if (x.type === 'shares') { desc = `${x.shares} shares of ${ref} (cost ${plain$(x.cost)})`; val = plain$(Math.floor(dealPx(x.ref, 'bid') * x.shares * 0.97)); btn = 'sell'; }
-      if (x.type === 'call' || x.type === 'put') { const px = dealPx(x.ref, x.type === 'call' ? 'bid' : 'ask'); const iv = Math.round(x.shares * Math.max(0, x.type === 'call' ? px - x.strike : x.strike - px)); desc = `${x.type} · ${x.shares} × ${ref} @ $${x.strike} · exp. R${x.expiry}`; val = plain$(iv); btn = iv > 0 ? 'exercise' : 'abandon'; }
-      if (x.type === 'cds') { desc = `CDS on ${ref} · ${plain$(x.notional)} · exp. R${x.expiry}`; val = `−${plain$(x.premium)}/rd`; btn = 'cancel'; }
-      if (x.type === 'insurance') { desc = `Rent insurance · $${x.deductible} deductible · exp. R${x.expiry}`; val = `−${plain$(x.premium)}/rd`; btn = 'cancel'; }
+    h += `<table class="t"><tr><th>Position</th><th class="n">Bank pays / flow</th><th></th></tr>${mine.map((x) => {
+      const ref = x.ref ? `${pl(x.ref).token} ${esc(pl(x.ref).name)}` : '';
+      let desc = ''; let val = ''; let btn = 'close'; let confirmTxt = '';
+      if (x.type === 'shares') { desc = `${x.shares} shares of ${ref} (cost ${plain$(x.cost)})`; val = plain$(positionQuote(x)); btn = 'sell'; }
+      if (x.type === 'call' || x.type === 'put') { const v = positionQuote(x); desc = `${x.type} · ${x.shares} × ${ref} @ $${x.strike} · exp. R${x.expiry}`; val = plain$(v); btn = 'sell back'; if (!v) confirmTxt = 'Close this option for $0? The bank values it at nothing right now.'; }
+      if (x.type === 'cds') { desc = `CDS on ${ref} · ${plain$(x.notional)} · exp. R${x.expiry}`; val = `−${plain$(x.premium)}/rd`; btn = 'cancel'; confirmTxt = 'Cancel this protection? Premiums already paid are not refunded.'; }
+      if (x.type === 'insurance') { desc = `Rent insurance · $${x.deductible} deductible · exp. R${x.expiry}`; val = `−${plain$(x.premium)}/rd`; btn = 'cancel'; confirmTxt = 'Cancel this policy? Premiums already paid are not refunded.'; }
       if (x.type === 'swap') { const net = Math.round(x.notional * (s.econ.policyRate - x.fixed) * (x.side === 'payFixed' ? 1 : -1) / 100); desc = `${x.side === 'payFixed' ? 'Pay' : 'Receive'} fixed ${pct(x.fixed)} on ${plain$(x.notional)} · exp. R${x.expiry}`; val = `${net >= 0 ? '+' : ''}${plain$(net)}/rd`; }
-      return `<tr><td>${desc}</td><td class="n">${val}</td><td><button class="small" data-act="deskClose" data-id="${x.id}" ${btn === 'cancel' || btn === 'abandon' ? `data-confirm="${btn === 'cancel' ? 'Cancel this policy? Premiums are not refunded.' : 'Abandon this option? At this round\'s share price it is worth nothing. Prices re-mark at the start of every round, so it may be worth something after the next one.'}"` : ''}>${btn}</button></td></tr>`;
+      if (x.type === 'short') { desc = `Short ${x.shares} × ${ref} (received ${plain$(x.proceeds)}) · fee ~${plain$(x.fee)}/rd`; val = `−${plain$(x.coverCost)}`; btn = 'cover'; confirmTxt = `Cover this short for ${plain$(x.coverCost)}?`; }
+      if (x.type === 'cdsSold') { desc = `Sold protection on ${ref} · ${plain$(x.notional)} · exp. R${x.expiry}`; val = `+${plain$(x.premium)}/rd`; btn = ''; }
+      const listBtn = ['shares', 'call', 'put', 'swap'].includes(x.type) && !st().market.listings.some((l) => l.position === x.id) ? `<button class="small" data-act="listPosition" data-id="${x.id}" data-shares="${x.shares || ''}" data-hint="${x.type === 'swap' ? 0 : positionQuote(x)}">list</button>` : '';
+      return `<tr><td>${desc}</td><td class="n">${val}</td><td><div class="row" style="flex-wrap:nowrap;gap:4px">${btn ? `<button class="small" data-act="deskClose" data-id="${x.id}" ${confirmTxt ? `data-confirm="${confirmTxt}"` : ''}>${btn}</button>` : ''}${listBtn}</div></td></tr>`;
     }).join('')}</table>`;
   }
-  h += `</div><p class="muted" style="font-size:12px">Bank desk P&L so far: ${money(desk.pnl)} · open positions across all players: ${desk.positions.length}. Desk positions count toward net worth (shares at the sell price, options at intrinsic value, swaps at mark-to-market) but not toward your borrowing limit.</p>`;
+  h += `</div><p class="muted" style="font-size:12px">Bank desk P&L so far: ${money(desk.totalPnl)} (cash ${money(desk.pnl)}, share inventory worth ${money(desk.inventoryValue)}) · open positions across all players: ${desk.positions.length}. Desk positions count toward net worth at what the bank would pay for them now, but not toward your borrowing limit.</p>`;
   return h;
 }
 
@@ -773,7 +817,8 @@ function tradeSide(side) {
 
 function tabTrades() {
   const s = st();
-  let h = '<div class="row" style="margin-bottom:10px"><button class="primary" data-open="trade">+ New trade</button><span class="muted" style="font-size:12px">Swap property, cash and get-out cards (traditional rules: no buildings in the traded group).</span></div>';
+  let h = '<div class="row" style="margin-bottom:10px"><button class="primary" data-open="trade">+ Two-player trade</button><button class="primary" data-open-deal>+ Multi-party deal</button></div><p class="muted" style="font-size:12px;margin-top:0">Two-player trades swap property, cash and get-out cards (traditional rules: no buildings in the traded group). Multi-party deals add any number of players and can move bank-desk positions too.</p>';
+  h += dealsHTML();
   const pending = s.trades.filter((t) => t.status === 'pending');
   const mine = pending.filter((t) => t.to === S.me || t.from === S.me);
   const others = pending.filter((t) => t.to !== S.me && t.from !== S.me);
@@ -1079,7 +1124,8 @@ const RULES_HTML = `<div class="rules"><h2>How to play Margin Call</h2>
 </ul>
 <h3>The central bank</h3>
 <ul>
-<li>Borrow any time for 5, 10 or 20 rounds, <b>floating</b> (policy rate + 0.25%, reset every round) or <b>fixed</b> (locked for the term, always quoted above floating). Interest is charged each round; principal is due at maturity (or rolls over at a penalty rate).</li>
+<li>Borrow any time for 5, 10 or 20 rounds, <b>floating</b> (policy rate + 0.25%, reset every round) or <b>fixed</b> (locked for the term, always quoted above floating). Interest is charged each round; principal is due at maturity (or rolls over at a penalty rate). Repay early any time: floating at par, fixed at <b>market value + 0.5%</b> (below par if rates have risen since you borrowed, above par if they have fallen).</li>
+<li>The bank prices fixed loans and swaps off its <b>forecast</b> of the policy rate, not just today's rate.</li>
 <li>Every quote adds a <b>credit spread</b> of 0.5% per unit of leverage.</li>
 <li>Borrowing is capped so that <b>assets ÷ equity ≤ the leverage cap</b>. If losses push you over the cap you get a <b>margin call</b>: fix it before you end your turn or the bank seizes cash, sells buildings and mortgages property to pay down your loans.</li>
 </ul>
@@ -1098,7 +1144,11 @@ const RULES_HTML = `<div class="rules"><h2>How to play Margin Call</h2>
 </ul>
 <h3>The bank desk</h3>
 <ul>
-<li>Trade with the central bank as counterparty: <b>shares</b> in rivals (100 shares each, priced at book equity ÷ 100, re-marked every round, 3% spread, dealt at the worse of the mark and the live price), <b>calls and puts</b> on those shares (Black-Scholes), <b>credit default swaps</b> on a rival going bankrupt, <b>rent insurance</b> (80% of any rent above your deductible) and <b>interest-rate swaps</b> against the policy rate.</li>
+<li>The central bank is a <b>market maker</b>: it values each player at book equity plus about 8 rounds of expected rent, less a discount for default risk, re-marks once a round, and quotes around that value with a spread, dealing at the worse of the round's mark and the live price for you.</li>
+<li><b>Shares</b>: each player owns 100 shares of themselves, plus 25 more in a float held by the bank. Others can buy from the float (the price rises as it runs out); after that, more shares exist only if the player <b>issues</b> them to raise cash. Net worth counts only your own share of your equity.</li>
+<li><b>Calls and puts</b> on rivals' shares: priced with Black-Scholes using share history plus the rent shocks the board implies; sold at fair value + 10% and bought back any time at fair value − 10%.</li>
+<li><b>Credit default swaps</b>, <b>rent insurance</b> (re-priced every round from where you stand) and <b>rate swaps</b>.</li>
+<li>The bank <b>refuses</b> trades it can't price or that invite abuse: no protection or puts on a player below $0, no protection, options or new equity on players close to default, and caps on total protection and options per player.</li>
 <li>You can't trade instruments on yourself. Desk positions count toward net worth but not toward your borrowing limit.</li>
 </ul>
 <h3>Skill-test settings (lobby)</h3>
@@ -1139,6 +1189,23 @@ document.addEventListener('click', (ev) => {
     if (t.dataset.target) extra.target = t.dataset.target;
     if (a === 'bid') { extra.amount = Number($('#bidAmt').value); if (!extra.amount) return toast('Enter a bid', 'err'); $('#bidAmt').value = ''; }
     if (a === 'borrow') { extra.amount = Number($('#bankAmt').value); extra.term = Number($('#bankTerm').value); extra.kind = $('#bankKind').value; if (!extra.amount) return toast('Enter an amount', 'err'); $('#bankAmt').value = ''; }
+    if (a === 'takeAxe') {
+      extra.axe = { id: t.dataset.id };
+      if (t.dataset.cds) { const inp = $(`#axn-${CSS.escape(t.dataset.id)}`); extra.axe.notional = Number(inp && inp.value) || undefined; extra.axe.term = 10; } else extra.axe.shares = Number(t.dataset.shares);
+    }
+    if (a === 'listPosition') {
+      let shares;
+      if (t.dataset.shares) { shares = Number(prompt(`How many shares to offer? (you hold ${t.dataset.shares})`, t.dataset.shares)); if (!shares) return; }
+      const price = Number(prompt(`Total asking price? (the bank would pay about ${plain$(Number(t.dataset.hint) * (shares ? shares / Number(t.dataset.shares) : 1))})`, ''));
+      if (!price) return;
+      extra.listing = { position: t.dataset.id, shares, price };
+      delete extra.id;
+    }
+    if (a === 'postBid') {
+      extra.bid = { ref: t.dataset.ref, shares: Number($('#tmBidN').value), priceEach: Number($('#tmBidPx').value) };
+      if (!extra.bid.shares || !extra.bid.priceEach) return toast('Enter a quantity and a price', 'err');
+    }
+    if (a === 'fillBid') { const b = st().market.bids.find((x) => x.id === t.dataset.id); extra.shares = b ? b.shares : undefined; }
     if (a === 'deskBuy') {
       const d = S.dk; const m = d.ref && st().desk.marks[d.ref];
       extra.order = { product: d.product, ref: d.ref, shares: Number(d.shares), strike: d.strike === '' && m ? m.price : Number(d.strike), term: Number(d.term), notional: Number(d.notional), deductible: Number(d.deductible), side: d.side };

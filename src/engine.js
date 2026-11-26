@@ -77,6 +77,7 @@ function mulberry(a) {
 const LOAN_TERMS = [5, 10, 20];
 const FLOAT_MARGIN = 0.25;                          // floating loans: policy rate + this + credit spread
 const FIXED_PREMIUM = { 5: 0.25, 10: 0.35, 20: 0.5 }; // extra cost of locking a fixed rate
+const PREPAY_FEE = 0.005;                           // early repayment of a fixed loan: market value + 0.5%
 const BAIL = 50;
 const AUCTION_START_MS = 25000;
 const AUCTION_BID_MS = 12000;
@@ -235,6 +236,7 @@ class Game {
     this.status = 'playing';
     this.saleQueue = [];
     this.initDesk();
+    this.initMarket();
     this.round = 0;
     this.recordHistory(); // round 0 = opening conditions
     this.round = 1;
@@ -312,8 +314,11 @@ class Game {
   }
   mortgageDebt(pid) { return this.ownedBy(pid).reduce((a, i) => a + (this.props[i].mortgaged ? this.props[i].mortgageAmt : 0), 0); }
   bankDebt(p) { return p.loans.reduce((a, l) => a + l.principal, 0); }
-  assets(p) { return p.cash + this.propertyValue(p.id); }
-  bookEquity(p) { return this.assets(p) - this.bankDebt(p) - this.mortgageDebt(p.id); }
+  // Bank-desk positions are on the balance sheet at liquidation value (what the bank would pay or
+  // charge to close them now): long positions are assets, shorts and losing swaps are liabilities.
+  deskBal(p) { return this.desk ? this.deskBalance(p) : { assets: 0, liabilities: 0 }; }
+  assets(p) { return p.cash + this.propertyValue(p.id) + this.deskBal(p).assets; }
+  bookEquity(p) { return this.assets(p) - this.bankDebt(p) - this.mortgageDebt(p.id) - this.deskBal(p).liabilities; }
   leverage(p) {
     const eq = this.bookEquity(p);
     if (eq <= 0) return Infinity;
@@ -327,9 +332,12 @@ class Game {
   borrowHeadroom(p) { return Math.max(0, this.maxLoan(p) - this.bankDebt(p)); }
   inBreach(p) { return this.bankDebt(p) > this.maxLoan(p); }
 
-  // Equity stakes shift economic net worth between players (scored on book equity of issuer).
+  // Net worth = your share of your own book equity (outside shareholders own the rest), plus equity
+  // stakes held/issued through contracts, plus bank-desk positions, plus the market gain on fixed loans
+  // locked below today's rates. (That loan gain counts toward net worth but never toward borrowing power.)
   netWorth(p) {
-    let nw = this.bookEquity(p);
+    const eq = this.bookEquity(p);
+    let nw = this.desk && eq > 0 ? eq * this.insiderFraction(p.id) : eq;
     for (const c of this.contracts) {
       if (c.status !== 'active') continue;
       for (const cl of c.clauses) {
@@ -338,15 +346,60 @@ class Game {
         if (cl.from === p.id) nw -= (cl.pct / 100) * Math.max(0, this.bookEquity(p));
       }
     }
-    if (this.desk) nw += this.deskValue(p);
+    nw += this.loanMtmGain(p); // desk positions are already inside book equity
     return Math.round(nw);
   }
 
-  // Central-bank yield curve: short end = policy rate, long end anchored to neutral + term premium.
+  // The bank's forecast of the policy rate for each of the next n rounds: heat drifts back toward 50
+  // and the policy rate follows its own rule toward the resulting target. Pricing loans and swaps off
+  // this forecast (instead of today's rate) stops players locking in rates the bank can see will move.
+  policyPath(n) {
+    const s = this.settings; const out = [];
+    let p = this.econ.policyRate; let heat = this.econ.heat;
+    for (let j = 1; j <= n; j++) {
+      heat = 50 + (heat - 50) * 0.7;
+      const pi = s.inflationTarget + (heat - 50) * 0.04;
+      const target = s.neutralRate + pi + 0.5 * (pi - s.inflationTarget) + 0.02 * (heat - 50);
+      p = Math.max(0, 0.6 * p + 0.4 * target);
+      out.push(p);
+    }
+    return out;
+  }
+  termPremium(n) { return n <= 5 ? 0.05 * n : n <= 10 ? 0.25 + 0.05 * (n - 5) : 0.5 + 0.05 * (n - 10); }
+  // Yield curve: the average forecast policy rate over the term plus a term premium (0.25/0.5/1.0% at 5/10/20).
   curveRate(term) {
-    const w = 5 / term;
-    const premium = { 5: 0.25, 10: 0.5, 20: 1.0 }[term];
-    return w * this.econ.policyRate + (1 - w) * (this.settings.neutralRate + this.settings.inflationTarget) + premium;
+    if (term <= 0) return this.econ.policyRate;
+    const path = this.policyPath(term);
+    return path.reduce((a, b) => a + b, 0) / term + this.termPremium(term);
+  }
+
+  // Market value of a fixed loan per $1 of principal: remaining interest and principal discounted at
+  // today's curve plus the loan's original spread over the curve. Only rate moves change it (not the
+  // borrower's own credit, which would reward getting riskier). Floating loans reset, so they stay at par.
+  loanMarketRatio(l) {
+    if (l.kind === 'floating') return 1;
+    const n = Math.max(0, l.maturity - this.round);
+    if (!n) return 1;
+    const spread = l.rate - (l.curveAtOrigin ?? l.rate);
+    const d = (this.curveRate(n) + spread) / 100;
+    const c = l.rate / 100;
+    let pv = 0;
+    for (let k = 1; k <= n; k++) pv += c / (1 + d) ** k;
+    return pv + 1 / (1 + d) ** n;
+  }
+  // Early repayment: floating at par; fixed at market value plus a small fee. If rates have risen
+  // you repay below par (a real gain); if they have fallen you pay a make-whole premium.
+  prepayCost(l, amount) {
+    if (l.kind === 'floating') return amount;
+    return Math.ceil(amount * (this.loanMarketRatio(l) + PREPAY_FEE));
+  }
+  maxPrepay(p, l) {
+    if (p.cash <= 0) return 0;
+    const unit = l.kind === 'floating' ? 1 : this.loanMarketRatio(l) + PREPAY_FEE;
+    return Math.min(l.principal, Math.floor(p.cash / unit));
+  }
+  loanMtmGain(p) {
+    return p.loans.reduce((a, l) => a + (l.kind === 'floating' ? 0 : l.principal * (1 - this.loanMarketRatio(l))), 0);
   }
   creditSpread(p, extra = 0) {
     const eq = this.bookEquity(p);
@@ -858,7 +911,7 @@ class Game {
             this.pay(p.id, null, l.principal, 'bank loan matured — principal repaid');
             p.loans = p.loans.filter((x) => x !== l);
           } else {
-            if (l.kind === 'floating') { l.margin = round2(l.margin + 2); l.penalty = (l.penalty || 0) + 2; l.rate = round2(this.econ.policyRate + l.margin); } else { l.base = round2(this.curveRate(5) + 2); l.rate = round2(l.base + spread); }
+            if (l.kind === 'floating') { l.margin = round2(l.margin + 2); l.penalty = (l.penalty || 0) + 2; l.rate = round2(this.econ.policyRate + l.margin); } else { l.curveAtOrigin = this.curveRate(5); l.base = round2(l.curveAtOrigin + 2); l.rate = round2(l.base + spread); }
             l.maturity = this.round + 5;
             l.term = 5;
             this.addLog(`⚠ ${p.name} could not repay a $${l.principal} loan — rolled over at a penalty rate of ${l.rate.toFixed(2)}%.`, 'warn');
@@ -884,6 +937,7 @@ class Game {
     const loan = { id: this.id('L'), kind, principal: amount, rate, term, start: this.round, maturity: this.round + term };
     if (kind === 'fixed') loan.base = round2(rate - this.creditSpread(p, amount)); // locked part; the spread re-prices under risk-priced credit
     if (kind === 'floating') loan.margin = round2(rate - this.econ.policyRate);
+    else loan.curveAtOrigin = this.curveRate(term);
     p.loans.push(loan);
     p.cash += amount;
     this.addLog(`🏦 ${p.name} borrows $${amount} from the central bank for ${term} rounds at ${kind === 'floating' ? `a floating ${rate.toFixed(2)}%/round (policy + ${loan.margin.toFixed(2)}%)` : `a fixed ${rate.toFixed(2)}%/round`}.`, 'bank');
@@ -895,10 +949,12 @@ class Game {
     if (!l) fail('Unknown loan');
     amount = Math.min(toInt(amount, 'amount'), l.principal);
     if (amount <= 0) fail('Invalid amount');
-    if (amount > p.cash) fail('Not enough cash');
-    p.cash -= amount; l.principal -= amount;
+    const cost = this.prepayCost(l, amount);
+    if (cost > p.cash) fail(`Repaying $${amount} of this loan costs $${cost} at today's rates — not enough cash`);
+    p.cash -= cost; l.principal -= amount;
     if (l.principal <= 0) p.loans = p.loans.filter((x) => x !== l);
-    this.addLog(`🏦 ${p.name} repays $${amount} of bank debt.`, 'bank');
+    const diff = cost - amount;
+    this.addLog(`🏦 ${p.name} repays $${amount} of bank debt for $${cost}${diff ? ` (${diff > 0 ? `$${diff} make-whole premium` : `$${-diff} below par: rates have risen`})` : ''}.`, 'bank');
   }
 
   repayHighestRate(p, amount) {
@@ -1290,6 +1346,7 @@ class Game {
       } else if (c.status === 'proposed') c.status = 'cancelled';
     }
     for (const t of this.trades) if (t.status === 'pending' && (t.from === p.id || t.to === p.id)) t.status = 'cancelled';
+    this.marketOnBankrupt(p);
     if (this.auction && this.auction.seller === p.id) this.auction = null; // their own liquidation sale is replaced by the estate sale
     if (this.settings.liquidation === 'auction' && this.active().length > 2) this.queueEstate(p);
     for (const i of this.ownedBy(p.id)) {
@@ -1360,6 +1417,17 @@ class Game {
       case 'borrow': return this.borrow(p, msg.amount, msg.term, msg.kind);
       case 'deskBuy': return this.deskBuy(p, msg.order || {});
       case 'deskClose': return this.deskClose(p, msg.id);
+      case 'takeAxe': return this.takeAxe(p, msg.axe || {});
+      case 'proposeDeal': return this.proposeDeal(p, msg.deal || {});
+      case 'acceptDeal': return this.respondDeal(p, msg.id, true);
+      case 'rejectDeal': return this.respondDeal(p, msg.id, false);
+      case 'cancelDeal': return this.cancelDeal(p, msg.id);
+      case 'listPosition': return this.listPosition(p, msg.listing || {});
+      case 'buyListing': return this.buyListing(p, msg.id);
+      case 'cancelListing': return this.cancelListing(p, msg.id);
+      case 'postBid': return this.postBid(p, msg.bid || {});
+      case 'fillBid': return this.fillBid(p, msg.id, msg.shares);
+      case 'cancelBid': return this.cancelBid(p, msg.id);
       case 'repay': return this.repay(p, msg.loanId, msg.amount);
       case 'proposeTrade': return this.proposeTrade(p, msg.trade || {});
       case 'acceptTrade': return this.respondTrade(p, msg.id, true);
@@ -1396,7 +1464,9 @@ class Game {
       const lev = this.leverage(p);
       return {
         ...base, cash: p.cash, pos: p.pos, inJail: p.inJail, jailTurns: p.jailTurns, jailCards: p.jailCards.length,
-        loans: p.loans, bankDebt: this.bankDebt(p), mortgageDebt: this.mortgageDebt(p.id),
+        loans: p.loans.map((l) => ({ ...l, marketRatio: round2(this.loanMarketRatio(l) * 100) / 100, prepay100: this.prepayCost(l, 100) })),
+        loanMtmGain: Math.round(this.loanMtmGain(p)),
+        bankDebt: this.bankDebt(p), mortgageDebt: this.mortgageDebt(p.id),
         propertyValue: this.propertyValue(p.id), equity: this.bookEquity(p), netWorth: this.netWorth(p),
         leverage: Number.isFinite(lev) ? round2(lev) : null, maxLoan: this.maxLoan(p), headroom: this.borrowHeadroom(p),
         marginCall: this.inBreach(p),
@@ -1431,11 +1501,13 @@ class Game {
       trades: this.trades.filter((t) => t.status === 'pending' || t.round >= this.round - 3).slice(-40),
       contracts: this.contracts,
       desk: this.deskView(),
+      market: this.marketView(),
       now: this.now(),
     };
   }
 }
 
 require('./desk')(Game, { fail, toInt, toNum, clamp, round2 });
+require('./market')(Game, { fail, toInt, toNum, clamp, round2 });
 
 module.exports = { Game, GameError, DEFAULT_SETTINGS, PRESETS, LOAN_TERMS, CLAUSE_KINDS, BOT_DELAY_MIN, BOT_DELAY_MAX };
