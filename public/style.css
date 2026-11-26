@@ -282,6 +282,10 @@ h3 { margin: 18px 0 8px; font-family: var(--serif); font-size: 15px; font-weight
 .final .payout-head { text-align: center; }
 .payout-wrap { overflow-x: auto; max-width: 100%; }
 .payout-table td, .payout-table th { white-space: nowrap; }
+/* compact variant (sidebar, phones): tighter cells, and long player names wrap instead of widening the table */
+.payout-table.compact { font-size: 12px; }
+.payout-table.compact td, .payout-table.compact th { padding: 4px 4px; }
+.payout-table.compact td.pname { white-space: normal; overflow-wrap: anywhere; min-width: 70px; }
 .payout-table tr.total td { border-top: 2px solid var(--line); border-bottom: none; }
 .final .payout-table tr.total td { border-top-color: #b9ae8c; }
 .final .payout-table .pos { color: #1d7a45; }
