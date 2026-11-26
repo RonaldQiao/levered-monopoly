@@ -12,13 +12,7 @@
 // - Bids to its valuation in auctions, haggles for monopoly-completing trades, refuses lopsided deals.
 // - Values player contracts by discounted expected cash flows and counterparty risk.
 // - Uses the bank desk: rent insurance when one bad roll could ruin it, shares of the leader with idle cash.
-const { SPACES, GROUP_MEMBERS, TRANSITS, UTILITIES } = require('./board');
-
-// Approximate long-run landing probability per space per turn (jail-weighted).
-const LAND = [0.031, 0.021, 0.019, 0.022, 0.024, 0.029, 0.023, 0.009, 0.023, 0.023,
-  0.063, 0.027, 0.026, 0.024, 0.025, 0.029, 0.028, 0.026, 0.029, 0.031,
-  0.028, 0.028, 0.011, 0.027, 0.032, 0.031, 0.027, 0.027, 0.028, 0.026,
-  0.000, 0.027, 0.026, 0.024, 0.025, 0.024, 0.009, 0.022, 0.022, 0.026];
+const { SPACES, GROUP_MEMBERS, TRANSITS, UTILITIES, LAND } = require('./board');
 
 const memo = (g, pid) => {
   g.botMem ||= {};
@@ -186,7 +180,8 @@ function manage(g, me, m) {
   if (g.inBreach(me)) {
     const excess = g.bankDebt(me) - g.maxLoan(me);
     const loan = me.loans.slice().sort((a, b) => b.rate - a.rate)[0];
-    if (me.cash > 0 && loan) return { action: 'repay', loanId: loan.id, amount: Math.min(me.cash, excess, loan.principal) };
+    const amt = loan ? Math.min(g.maxPrepay(me, loan), excess) : 0;
+    if (amt > 0) return { action: 'repay', loanId: loan.id, amount: amt };
     const r = raiseCash(g, { ...me, cash: -1 });
     if (r && r.action !== 'borrow') return r;
   }
@@ -212,7 +207,14 @@ function manage(g, me, m) {
   // 5. Pay down expensive debt with idle cash.
   if (me.loans.length && !top && me.cash > res * 2.5) {
     const loan = me.loans.slice().sort((a, b) => b.rate - a.rate)[0];
-    return { action: 'repay', loanId: loan.id, amount: Math.min(loan.principal, Math.floor(me.cash - res * 2)) };
+    const amt = g.maxPrepay({ ...me, cash: me.cash - res * 2 }, loan);
+    if (amt > 0) return { action: 'repay', loanId: loan.id, amount: amt };
+  }
+  // 5b. Rates have risen: buy back a fixed loan below par and bank the gain.
+  const cheap = me.loans.find((l) => l.kind !== 'floating' && g.loanMarketRatio(l) < 0.97);
+  if (cheap && me.cash > res * 1.5) {
+    const amt = g.maxPrepay({ ...me, cash: me.cash - res }, cheap);
+    if (amt > 0) return { action: 'repay', loanId: cheap.id, amount: amt };
   }
   // 6. Insure against a ruinous rent when the board gets dangerous.
   const hasIns = g.desk.positions.some((x) => x.holder === me.id && x.type === 'insurance');
@@ -230,7 +232,8 @@ function manage(g, me, m) {
     const leader = opponents(g, me.id).sort((a, b) => g.netWorth(b) - g.netWorth(a))[0];
     const price = leader && g.desk.marks[leader.id].price;
     const held = g.desk.positions.filter((x) => x.holder === me.id && x.type === 'shares' && x.ref === leader?.id).reduce((a, x) => a + x.shares, 0);
-    const n = price > 0 ? Math.min(25, 50 - held, Math.floor((me.cash - res * 3) / (price * 1.03))) : 0;
+    const inv = leader ? g.desk.equity[leader.id].inv : 0;
+    const n = price > 0 ? Math.min(25, 50 - held, inv, Math.floor((me.cash - res * 3) / (price * 1.3))) : 0;
     if (n >= 5) return { action: 'deskBuy', order: { product: 'shares', ref: leader.id, shares: n } };
   }
   return null;

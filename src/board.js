@@ -71,4 +71,11 @@ SPACES.forEach((s) => {
 const TRANSITS = SPACES.filter((s) => s.type === 'transit').map((s) => s.index);
 const UTILITIES = SPACES.filter((s) => s.type === 'utility').map((s) => s.index);
 
-module.exports = { GROUPS, SPACES, OWNABLE, JAIL_INDEX, GROUP_MEMBERS, TRANSITS, UTILITIES };
+// Approximate long-run chance that a given player lands on each space in one turn (jail-weighted).
+// Used by the AI to value property and by the bank to value players' rent income.
+const LAND = [0.031, 0.021, 0.019, 0.022, 0.024, 0.029, 0.023, 0.009, 0.023, 0.023,
+  0.063, 0.027, 0.026, 0.024, 0.025, 0.029, 0.028, 0.026, 0.029, 0.031,
+  0.028, 0.028, 0.011, 0.027, 0.032, 0.031, 0.027, 0.027, 0.028, 0.026,
+  0.000, 0.027, 0.026, 0.024, 0.025, 0.024, 0.009, 0.022, 0.022, 0.026];
+
+module.exports = { GROUPS, SPACES, OWNABLE, JAIL_INDEX, GROUP_MEMBERS, TRANSITS, UTILITIES, LAND };
