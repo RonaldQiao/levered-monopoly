@@ -26,3 +26,24 @@ Run the record and capture steps from inside `demo-video/`, because the paths ar
   time per AI move. The ▶▶ badge shows the speed relative to the game's default AI pace (1.5 s per move).
 * `overlay.css` styles the graphics; `fake.js` replaces the WebSocket so the client renders recorded states.
 * Frame indices in `CUES` belong to seed 30. A different seed needs new cues (use `story.js`).
+
+## Second video: contracts and rate swaps (`swaps/`)
+
+A feature tour: a human player ("You") against four AI agents. A scripted cursor drives the real
+dashboard. It borrows $2,000 floating in the Central Bank tab and builds an interest-rate swap with Keynes in the
+contract builder (pay fixed 2.75%, receive floating, Keynes pledges Canal Street as collateral).
+Keynes's AI prices the contract and signs it. Then the cursor hedges the rest with a pay-fixed swap on the Bank Desk.
+The game then plays on while a rate-hike card and an overheating economy push the policy rate from 1.75% to 4.5%.
+Unhedged, the loan's interest would climb from $52 to $102 a round; with both swaps it stays flat at about $61.
+
+```bash
+cd demo-video
+node swaps/scan.js 200                # seeds where rates rise after the hedge and Keynes signs
+node swaps/rec.js                     # record seed 59 -> swaps/frames59.json
+node swaps/test.js 4000               # dry run with screenshots (swaps/t_*.png)
+node capture.js take1 swaps           # real-time capture (~100 s)
+./encode.sh swaps/take1 swaps/margin-call-swaps-demo.mp4
+```
+
+"You" plays routine moves with the shipped AI. Only the hedge is scripted (`swaps/game.js`).
+The director checks that the contract and orders the UI sends match the recorded ones, and logs `[director] proposeContract matches the recorded action`.

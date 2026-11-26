@@ -3,3 +3,5 @@ frames*.json
 *.mp4
 *.png
 *.jpg
+t_*.png
+frames*.json

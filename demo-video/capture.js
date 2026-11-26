@@ -1,12 +1,13 @@
 // Real-time capture via CDP screencast -> JPEG frames with timestamps -> CFR H.264.
 const { chromium } = require('playwright'); const fs = require('fs'); const path = require('path'); const { execFileSync } = require('child_process');
 (async () => {
-  const out = process.argv[2] || 'take'; const dir = path.join(__dirname, `${out}_frames`);
+  const out = process.argv[2] || 'take'; const src = path.resolve(process.argv[3] || __dirname); const dir = path.join(src, `${out}_frames`);
   fs.rmSync(dir, { recursive: true, force: true }); fs.mkdirSync(dir);
-  const srv = await require('./serve')(4113);
+  const srv = await require('./serve')(4113, src);
   const b = await chromium.launch({ args: ['--force-color-profile=srgb', '--font-render-hinting=none'] });
   const p = await b.newPage({ viewport: { width: 1280, height: 720 }, deviceScaleFactor: 1.5 });
   p.on('pageerror', (e) => console.log('pageerror', e.message));
+  p.on('console', (m) => { if (m.text().startsWith('[director]')) console.log(m.text()); });
   await p.goto('http://localhost:4113/'); await p.waitForFunction(() => window.__ready); await p.evaluate(() => document.fonts.ready);
   await p.waitForTimeout(1500);
   const cdp = await p.context().newCDPSession(p);
