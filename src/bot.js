@@ -406,19 +406,24 @@ function positionValue(g, x, shares) {
   if (x.type === 'swap') return g.swapMtm(x);
   return 0;
 }
-function evalDeal(g, me, d) {
+// Value change for every party to a multi-party deal (strategic property value + cash + positions).
+function dealDeltas(g, d, meId) {
   const before = ownerMap(g); const after = { ...before };
   const delta = Object.fromEntries(d.parties.map((id) => [id, 0]));
   let cashOut = 0;
   for (const l of d.legs) {
     let v = 0;
-    if (l.kind === 'cash') { v = l.amount; if (l.from === me.id) cashOut += l.amount; }
+    if (l.kind === 'cash') { v = l.amount; if (l.from === meId) cashOut += l.amount; }
     if (l.kind === 'card') v = 50 * l.count;
     if (l.kind === 'property') after[l.space] = l.to;
     if (l.kind === 'position') { const x = g.desk.positions.find((y) => y.id === l.position); v = x ? positionValue(g, x, l.shares) : 0; }
     delta[l.to] += v; delta[l.from] -= v;
   }
   for (const id of d.parties) delta[id] += stratValue(g, id, after) - stratValue(g, id, before);
+  return { delta, cashOut };
+}
+function evalDeal(g, me, d) {
+  const { delta, cashOut } = dealDeltas(g, d, me.id);
   if (cashOut > me.cash - reserve(g, me) * 0.3) return false;
   const mine = delta[me.id];
   const best = Math.max(...d.parties.filter((id) => id !== me.id).map((id) => delta[id]));
@@ -536,4 +541,12 @@ function decide(g, pid) {
 // Called by the server when an action the bot chose was refused, so it won't retry it this turn.
 function markFailed(g, pid, action) { memo(g, pid).failed.add(key(action)); }
 
-module.exports = { decide, markFailed, worth, reserve, buildCandidates, evalTrade, evalContract, auctionCap, packageValue, params };
+// decide() with some params swapped in for this one call (a model-driven seat's fallback plays in character).
+function decideWith(g, pid, overrides) {
+  if (!overrides || !Object.keys(overrides).length) return decide(g, pid);
+  const saved = {};
+  for (const k of Object.keys(overrides)) if (k in params) { saved[k] = params[k]; params[k] = overrides[k]; }
+  try { return decide(g, pid); } finally { Object.assign(params, saved); }
+}
+
+module.exports = { decide, decideWith, markFailed, worth, reserve, buildCandidates, evalTrade, evalContract, evalDeal, tradeDeltas, dealDeltas, auctionCap, packageValue, params };

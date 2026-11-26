@@ -10,7 +10,7 @@ const pct = (n, d = 2) => `${Number(n).toFixed(d)}%`;
 
 const S = {
   ws: null, me: null, code: null, token: null, board: null, state: null,
-  tab: 'players', clockSkew: 0, lastRollSeq: null, lastCardSeq: null, cardKey: null, lastTurnKey: null, charts: {},
+  tab: 'players', agents: { models: [], personas: [] }, aiPick: { kind: 'classic', model: '' }, chatSeen: 0, clockSkew: 0, lastRollSeq: null, lastCardSeq: null, cardKey: null, lastTurnKey: null, charts: {},
 };
 
 const ICONS = { go: '💰', jail: '🔒', parking: '☕', gotojail: '👮', event: '📰', treasury: '🏛️', tax: '🧾' };
@@ -37,7 +37,7 @@ function connect() {
   ws.onmessage = (ev) => {
     const msg = JSON.parse(ev.data);
     if (msg.type === 'joined') {
-      Object.assign(S, { me: msg.playerId, code: msg.code, token: msg.token, board: msg.board });
+      Object.assign(S, { me: msg.playerId, code: msg.code, token: msg.token, board: msg.board, agents: msg.agents || { models: [], personas: [] } });
       store.set({ code: msg.code, token: msg.token });
     } else if (msg.type === 'state') {
       S.state = msg.state;
@@ -130,14 +130,40 @@ function aiSpeedHTML(id = 'aiSpeed') {
   </div>`;
 }
 
+// Model-driven AI players: persona + model badge, and a live "thinking" / "autopilot" badge in game.
+function aiBadges(p) {
+  if (!p.bot) return '';
+  if (!p.agent) return '<span class="badge" title="Rule-based AI">AI</span>';
+  const persona = (S.agents.personas.find((x) => x.id === p.agent.persona) || {});
+  const model = (S.agents.models.find((x) => x.id === p.agent.model) || { label: p.agent.model });
+  const live = (st() && st().agentStatus && st().agentStatus[p.id]) || {};
+  return `<span class="badge ai-persona" title="${esc(persona.blurb || '')} · ${esc(model.label)}">🧠 ${esc(persona.name || p.agent.persona)} · ${esc(model.label)}</span>`
+    + (live.busy ? '<span class="badge good thinking">thinking…</span>' : '')
+    + (live.autopilot ? `<span class="badge warn" title="${esc(live.autopilot)}">autopilot</span>` : '');
+}
+function addAiHTML() {
+  const A = S.agents; const pick = S.aiPick;
+  if (!A.models.some((m) => m.id === pick.model)) pick.model = A.models[0] ? A.models[0].id : '';
+  const kinds = [['classic', 'Classic AI (rule-based)'], ...A.personas.map((x) => [x.id, `${x.name} — ${x.blurb}`])];
+  const can = A.models.length > 0;
+  return `<li class="add-bot add-ai">
+    <select id="aiKind" title="Which kind of AI player">${kinds.map(([k, l], n) => `<option value="${k}" ${k === pick.kind ? 'selected' : ''} ${n && !can ? 'disabled' : ''}>${esc(l)}</option>`).join('')}</select>
+    ${can && pick.kind !== 'classic' ? `<select id="aiModel" title="Model">${A.models.map((m) => `<option value="${m.id}" ${m.id === pick.model ? 'selected' : ''}>${esc(m.label)}</option>`).join('')}</select>` : ''}
+    <button data-addai>+ Add AI player</button>
+    ${can ? '' : '<span class="muted" style="font-size:12px">AI personalities need ANTHROPIC_API_KEY or DEEPSEEK_API_KEY set on the server.</span>'}
+  </li>`;
+}
+
 // ------------------------------------------------------------------ lobby
 function renderLobby() {
   const s = st(); const me = meP();
   $('#lobbyCode').textContent = s.code;
   $('#lobbyUrl').textContent = location.host;
   const host = me && me.host; const set = s.settings;
-  $('#lobbyPlayers').innerHTML = s.players.map((p) => `<li style="border-color:${p.color}"><span style="font-size:20px">${p.token}</span><span>${esc(p.name)}</span>${p.bot ? '<span class="badge">AI</span>' : ''}${p.host ? '<span class="badge">host</span>' : ''}${p.connected ? '' : '<span class="badge warn">offline</span>'}${p.id === S.me ? '<span class="badge good">you</span>' : ''}${set.realMoney ? `<span class="badge stake" title="Real-money stake">💵 ${window.Payout.dollars(p.stake || 0)}</span>` : ''}${p.bot && host ? `<button class="small link" data-act="removeBot" data-target="${p.id}" title="Remove this AI player">remove</button>` : ''}</li>`).join('')
-    + (host && s.players.length < 8 ? '<li class="add-bot"><button data-act="addBot">+ Add AI player</button></li>' : '');
+  $('#lobbyPlayers').innerHTML = s.players.map((p) => `<li style="border-color:${p.color}"><span style="font-size:20px">${p.token}</span><span>${esc(p.name)}</span>${aiBadges(p)}${p.host ? '<span class="badge">host</span>' : ''}${p.connected ? '' : '<span class="badge warn">offline</span>'}${p.id === S.me ? '<span class="badge good">you</span>' : ''}${set.realMoney ? `<span class="badge stake" title="Real-money stake">💵 ${window.Payout.dollars(p.stake || 0)}</span>` : ''}${p.bot && host ? `<button class="small link" data-act="removeBot" data-target="${p.id}" title="Remove this AI player">remove</button>` : ''}</li>`).join('')
+    + (host && s.players.length < 8 ? addAiHTML() : '');
+  if ($('#aiKind')) $('#aiKind').onchange = (e) => { S.aiPick.kind = e.target.value; renderLobby(); };
+  if ($('#aiModel')) $('#aiModel').onchange = (e) => { S.aiPick.model = e.target.value; };
   const dis = host ? '' : 'disabled';
   const sel = (id, v, opts) => `<select id="${id}" ${dis}>${opts.map(([k, l]) => `<option value="${k}" ${String(k) === String(v) ? 'selected' : ''}>${l}</option>`).join('')}</select>`;
   const onOff = (id, v, on = 'On', off = 'Off') => sel(id, v ? '1' : '0', [['1', on], ['0', off]]);
@@ -162,7 +188,9 @@ function renderLobby() {
     <label>Credit pricing${sel('setCredit', set.creditModel, [['classic', 'Classic (0.5%/unit leverage)'], ['riskPriced', 'Risk-priced (1.5%/unit, re-priced each round)']])}</label>
     <label>Neutral real rate %/round<input id="setNeutral" type="number" min="0" max="12" step="0.5" value="${set.neutralRate}" ${dis}></label>
     <label>Game length<input id="setRounds" type="number" min="0" max="500" step="5" value="${set.maxRounds}" ${dis} title="0 = play until one player is left"></label>
-    <label>Distressed property${sel('setLiq', set.liquidation, [['auction', 'Auction to players (sealed bid)'], ['bank', 'Sell to the bank only']])}</label>`);
+    <label>Distressed property${sel('setLiq', set.liquidation, [['auction', 'Auction to players (sealed bid)'], ['bank', 'Sell to the bank only']])}</label>
+    <label title="Chat, direct messages and the AI players' notes live only in server memory, then are erased">Table talk & AI memory${sel('setMemory', set.memoryScope, [['round', 'Erased at the end of every round'], ['game', 'Kept until the game ends']])}</label>
+    <label title="Most each model-driven AI may spend on API calls in this game; then it plays on autopilot">AI API budget per AI player ($)<input id="setBudget" type="number" min="0" max="20" step="0.1" value="${set.agentBudget ?? 0.5}" ${dis}></label>`);
   for (const inp of $$('#lobbySettings input, #lobbySettings select')) {
     inp.onchange = () => act('settings', { settings: {
       startingCash: $('#setCash').value, salary: $('#setSalary').value, maxLeverage: $('#setLev').value, auctions: $('#setAuc').value === '1',
@@ -170,6 +198,7 @@ function renderLobby() {
       ...($('#setSeed') ? { seed: $('#setSeed').value } : {}),
       moneyCards: $('#setCards').value === '1', jail: $('#setJail').value === '1', doubles: $('#setDoubles').value === '1',
       creditModel: $('#setCredit').value, neutralRate: $('#setNeutral').value, maxRounds: $('#setRounds').value, liquidation: $('#setLiq').value,
+      memoryScope: $('#setMemory').value, agentBudget: $('#setBudget').value,
     } });
   }
   setHTML($('#lobbyPayout'), lobbyPayoutHTML());
@@ -559,7 +588,9 @@ function renderTabs() {
   const conN = s.contracts.filter((c) => c.status === 'proposed' && c.parties[1] === S.me).length;
   const me = meP();
   const bankN = me && (me.marginCall || me.cash < 0) ? '!' : 0;
-  const dots = { trades: tradeN, contracts: conN, bank: bankN };
+  const dms = s.chat ? Object.values(s.chat.dms).flat().filter((m) => m.to === S.me && m.id > S.chatSeen) : [];
+  if (S.tab === 'log' && s.chat) S.chatSeen = Math.max(S.chatSeen, ...Object.values(s.chat.dms).flat().map((m) => m.id), 0);
+  const dots = { trades: tradeN, contracts: conN, bank: bankN, log: S.tab === 'log' ? 0 : dms.length };
   $('#tabs').innerHTML = TABS.map(([id, lbl]) => `<button data-tab="${id}" class="${S.tab === id ? 'on' : ''}">${lbl}${dots[id] ? `<span class="dot">${dots[id]}</span>` : ''}</button>`).join('');
 }
 
@@ -578,7 +609,7 @@ function tabPlayers() {
     const props = ownedBy(p.id);
     h += `<div class="pcard ${turn ? 'turn' : ''} ${p.bankrupt ? 'dead' : ''}" style="border-left-color:${p.color}">
       <div class="top"><span style="font-size:22px">${p.token}</span><span class="nm">${esc(p.name)}</span>
-        ${p.id === S.me ? '<span class="badge good">you</span>' : ''}${p.bot ? '<span class="badge">AI</span>' : ''}${p.host ? '<span class="badge">host</span>' : ''}
+        ${p.id === S.me ? '<span class="badge good">you</span>' : ''}${aiBadges(p)}${p.host ? '<span class="badge">host</span>' : ''}${p.muted ? '<span class="badge bad" title="Muted for prompt-injection strikes">muted</span>' : ''}
         ${p.connected ? '' : '<span class="badge warn">offline</span>'}${p.inJail ? '<span class="badge warn">lockup</span>' : ''}
         ${p.marginCall && !p.bankrupt ? '<span class="badge bad">margin call</span>' : ''}${p.bankrupt ? '<span class="badge bad">bankrupt</span>' : ''}
         <span class="cash">${money(p.cash)}</span></div>
@@ -1129,9 +1160,21 @@ function openContractModal() {
 
 // ------------------------------------------------------------------ log
 function tabLog() {
-  const s = st();
-  return `<div class="row" style="margin-bottom:10px"><input id="chatIn" placeholder="Say something…" maxlength="200" style="flex:1"><button data-chat>Send</button></div>
-    <div class="log-list">${s.log.slice().reverse().map((l) => `<div class="l-${l.kind}"><span class="muted">R${l.round}</span> ${l.kind === 'chat' ? `<b>${esc(l.msg.split(':')[0])}:</b>${esc(l.msg.slice(l.msg.indexOf(':') + 1))}` : esc(l.msg)}</div>`).join('')}</div>`;
+  const s = st(); const me = meP(); const chat = s.chat || { public: [], dms: {}, scope: 'round' };
+  const others = s.players.filter((p) => p.id !== S.me);
+  const msgs = [...chat.public.map((m) => ({ ...m, dm: false })), ...Object.values(chat.dms).flat().map((m) => ({ ...m, dm: true }))].sort((a, b) => a.id - b.id);
+  const who = (id) => { const p = pl(id); return p ? `${p.token} ${esc(p.name)}` : '?'; };
+  const line = (m) => `<div class="chat-msg ${m.dm ? 'dm' : ''} ${m.from === S.me ? 'mine' : ''}">${m.dm ? `<span class="badge" title="Direct message">🔒 ${m.from === S.me ? `to ${who(m.to)}` : 'to you'}</span>` : ''}<b>${who(m.from)}:</b> ${esc(m.text)}</div>`;
+  const muted = me && me.muted;
+  return `<div class="box chat-box">
+    <div class="row" style="gap:6px;flex-wrap:wrap">
+      <select id="chatTo" title="Send to">${[['', 'Everyone'], ...others.map((p) => [p.id, `🔒 ${p.token} ${p.name}`])].map(([k, l]) => `<option value="${k}">${esc(l)}</option>`).join('')}</select>
+      <input id="chatIn" placeholder="${muted ? 'You are muted for prompt-injection strikes' : 'Say something…'}" maxlength="200" style="flex:1;min-width:140px" ${muted ? 'disabled' : ''}><button data-chat ${muted ? 'disabled' : ''}>Send</button>
+    </div>
+    <p class="muted" style="font-size:11.5px;margin:6px 0">Chat and direct messages are held only in server memory and erased ${chat.scope === 'game' ? 'when the game ends' : 'at the end of every round'}. <b>Prompt injection is banned</b>: a message that tries to instruct the AI players (rather than negotiate with them) is blocked and counts as a strike; 3 strikes mute you.</p>
+    <div class="chat-list">${msgs.length ? msgs.slice().reverse().map(line).join('') : '<div class="muted">No messages this round.</div>'}</div>
+  </div>
+  <div class="log-list">${s.log.slice().reverse().map((l) => `<div class="l-${l.kind}"><span class="muted">R${l.round}</span> ${esc(l.msg)}</div>`).join('')}</div>`;
 }
 
 // ------------------------------------------------------------------ modals
@@ -1208,6 +1251,12 @@ const RULES_HTML = `<div class="rules"><h2>How to play Margin Call</h2>
 <li>Periodic legs are netted and settled at the start of every round. Miss a payment with collateral pledged and you <b>default</b> — the collateral transfers. When a party goes bankrupt their collateral transfers, CDS contracts on them pay out, and their other contracts are void.</li>
 <li>Options are exercised from the Contracts tab; any buildings in that colour group are sold to the bank first.</li>
 </ul>
+<h3>Table talk &amp; AI players</h3>
+<ul>
+<li><b>Chat and direct messages</b> are for negotiating. They are not binding: only offers accepted through the game are. They are kept only in the server's memory and erased at the end of every round (or at the end of the game, if the host chooses).</li>
+<li><b>Prompt injection is banned.</b> A message, player name, contract name or deal note that tries to instruct the AI players' models ("ignore your instructions", fake system messages, code or tool markup, hidden characters...) is blocked before anyone sees it and counts as a strike; three strikes mute that player for the rest of the game.</li>
+<li><b>AI personalities</b> (Shark, Turtle, Quant, Gambler, Diplomat, Vulture) are played by a language model for decisions that need judgment (trades, deals, building, borrowing, auctions, the desk, chat) and by the classic AI for routine moves. They can only act through the same game actions as you, and built-in risk controls stop any AI from handing away much more value than it gets.</li>
+</ul>
 <h3>The bank desk</h3>
 <ul>
 <li>The central bank is a <b>market maker</b>: it values each player at book equity plus about 8 rounds of expected net rent (less a discount for default risk) plus about 12 rounds of expected dividends, re-marks once a round, and quotes around that value with a spread, dealing at the worse of the round's mark and the live price for you.</li>
@@ -1251,7 +1300,8 @@ document.addEventListener('click', (ev) => {
   if (t.dataset.aipause) { act('botSpeed', { paused: t.dataset.aipause === '1' }); return; }
   if (t.dataset.bidplus) { const a = st().auction; const inp = $('#bidAmt'); const base = Math.max(a.highBid, Number(inp.value) || 0); inp.value = base + Number(t.dataset.bidplus); return; }
   if (t.dataset.bankmax !== undefined) { $('#bankAmt').value = meP().headroom; return; }
-  if (t.dataset.chat !== undefined) { const i = $('#chatIn'); if (i.value.trim()) { act('chat', { text: i.value }); i.value = ''; } return; }
+  if (t.dataset.chat !== undefined) { const i = $('#chatIn'); const to = $('#chatTo') ? $('#chatTo').value : ''; if (i.value.trim()) { act('chat', { text: i.value, ...(to ? { to } : {}) }); i.value = ''; } return; }
+  if (t.dataset.addai !== undefined) { const k = S.aiPick.kind; if (k === 'classic') act('addBot'); else act('addBot', { agent: { persona: k, model: S.aiPick.model } }); return; }
   if (t.dataset.act) {
     if (t.dataset.confirm && !confirm(t.dataset.confirm)) return;
     const a = t.dataset.act; const extra = {};

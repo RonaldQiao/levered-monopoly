@@ -481,3 +481,18 @@ table.t tr.dead { opacity: .45; }
 .eqboard { font-size: 12.5px; }
 .eqboard td, .eqboard th { padding: 4px 4px; }
 .eqboard small { font-size: 11px; }
+
+/* table talk: chat with direct messages */
+.chat-box { padding: 10px; }
+.chat-list { display: flex; flex-direction: column; gap: 4px; max-height: 260px; overflow-y: auto; font-size: 12.5px; }
+.chat-msg { padding: 3px 6px; border-radius: 6px; overflow-wrap: anywhere; }
+.chat-msg.dm { background: rgba(120, 90, 200, 0.12); }
+.chat-msg.mine { opacity: 0.85; }
+#chatTo { max-width: 150px; }
+
+/* AI players */
+.badge.ai-persona { white-space: normal; }
+.badge.thinking { animation: thinking 1.2s ease-in-out infinite; }
+@keyframes thinking { 50% { opacity: 0.45; } }
+.add-ai { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.add-ai select { max-width: 100%; }

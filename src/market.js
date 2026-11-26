@@ -109,7 +109,7 @@ module.exports = function installMarket(Game, { fail, toInt, toNum, round2 }) {
       if (raw.legs.length > 30) fail('Too many legs');
       const legs = raw.legs.map((l) => this.normalizeLeg(l, parties));
       for (const id of parties) if (!legs.some((l) => l.from === id || l.to === id)) fail(`${this.player(id).name} has no part in the deal`);
-      const d = { id: this.id('X'), proposer: p.id, parties, legs, note: String(raw.note || '').slice(0, 80), accepted: { [p.id]: true }, status: 'pending', round: this.round };
+      const d = { id: this.id('X'), proposer: p.id, parties, legs, note: this.cleanText(raw.note, 80, 'Deal note'), accepted: { [p.id]: true }, status: 'pending', round: this.round };
       this.checkDeal(d);
       this.deals.push(d);
       this.addLog(`🤝 ${p.name} proposes a ${parties.length}-party deal with ${parties.filter((x) => x !== p.id).map((x) => this.player(x).name).join(', ')}.`);

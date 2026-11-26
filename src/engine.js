@@ -2,6 +2,8 @@
 const { GROUPS, SPACES, OWNABLE, JAIL_INDEX, GROUP_MEMBERS, TRANSITS, UTILITIES } = require('./board');
 const { EVENT_CARDS, TREASURY_CARDS } = require('./cards');
 const Payout = require('./payout');
+const { RoundMemory } = require('./roundmemory');
+const Guard = require('./agents/guard');
 
 class GameError extends Error {}
 const fail = (msg) => { throw new GameError(msg); };
@@ -46,6 +48,8 @@ const DEFAULT_SETTINGS = {
   botsPaused: false,       // paused: AI players don't take turns (they still answer auctions and offers)
   realMoney: false,        // real-money payouts: each human declares a stake in the lobby (src/payout.js)
   payoutMode: 'winner',    // 'winner' | 'order' | 'share' | 'share3' (share modes need maxRounds > 0)
+  memoryScope: 'round',    // chat, DMs and AI opponent notes are wiped at the end of every 'round' | only when the 'game' ends
+  agentBudget: 0.5,        // US$ each model-driven AI may spend on API calls per game; then it plays on autopilot
 };
 const BOT_DELAY_MIN = 200;
 const BOT_DELAY_MAX = 15000;
@@ -119,6 +123,9 @@ class Game {
     this.outCount = 0;     // bankruptcies so far (finishing order for payouts)
     this.endReason = null; // 'lastStanding' | 'cap' | 'host'
     this.payout = null;    // real-money settlement, set when the game ends
+    // Talk and short-term AI memory: server RAM only, never serialized or logged, wiped each round
+    // (or at game end) — see src/roundmemory.js.
+    this.memory = new RoundMemory(this.settings.memoryScope);
   }
 
   id(prefix) { return `${prefix}${this.nextId++}`; }
@@ -133,6 +140,8 @@ class Game {
     if (this.status !== 'lobby') fail('Game already started');
     if (this.players.length >= 8) fail('Room is full (8 players)');
     name = String(name || '').trim().slice(0, 20) || `Player ${this.players.length + 1}`;
+    const nameCheck = Guard.check(name);
+    if (!nameCheck.ok) fail(`That name isn't allowed (${Guard.explain(nameCheck.reason)}): prompt injection is banned`);
     if (this.players.some((p) => p.name.toLowerCase() === name.toLowerCase())) fail('Name already taken');
     const used = new Set(this.players.map((p) => p.token));
     const t = TOKENS.find((x) => !used.has(x.token));
@@ -143,14 +152,24 @@ class Game {
       cash: 0, pos: 0, inJail: false, jailTurns: 0, jailCards: [],
       loans: [], bankrupt: false, marginCall: false, connected: true,
       stake: 0, // real-money stake in dollars (AI players always $0); locked when the game starts
+      agent: opts.agent || null, // model-driven AI: { persona, model } (null = rule-based AI or a human)
+      chatStrikes: 0, muted: false,
     };
     this.players.push(p);
     this.addLog(`${p.name} ${p.bot ? '(AI) ' : ''}joined the room.`);
     return p;
   }
 
-  addBot(pid) {
+  // agent: { persona, model, label } for a model-driven AI (the server checks the persona and that the
+  // model's provider has an API key before passing it); omitted for the classic rule-based AI.
+  addBot(pid, agent = null) {
     this.requireHost(pid);
+    if (agent) {
+      const base = String(agent.label || agent.persona).slice(0, 12);
+      let name = `${base} (AI)`;
+      for (let k = 2; this.players.some((p) => p.name === name); k++) name = `${base} ${k} (AI)`;
+      return this.addPlayer(name, { bot: true, agent: { persona: String(agent.persona), model: String(agent.model) } });
+    }
     const names = ['Ada', 'Keynes', 'Fisher', 'Minsky', 'Volcker', 'Ricardo', 'Hayek', 'Samuelson'];
     const name = names.map((n) => `${n} (AI)`).find((n) => !this.players.some((p) => p.name === n));
     return this.addPlayer(name || `Bot ${this.players.length + 1}`, { bot: true });
@@ -197,6 +216,9 @@ class Game {
     if (s.seed !== undefined) this.settings.seed = s.seed === null || s.seed === '' ? null : clamp(toInt(s.seed, 'seed'), 0, 2 ** 31 - 1);
     flag('realMoney');
     pick('payoutMode', Payout.MODE_KEYS);
+    pick('memoryScope', ['round', 'game']);
+    if (s.memoryScope !== undefined) this.memory.scope = this.settings.memoryScope;
+    if (s.agentBudget !== undefined) this.settings.agentBudget = clamp(toNum(s.agentBudget), 0, 20);
     this.requirePayoutCap();
   }
 
@@ -941,6 +963,7 @@ class Game {
     this.closeRoundEconomy();
     this.recordHistory();
     this.round++;
+    this.memory.onRound(this.round);
     this.econ.roundSpending = 0;
     this.econ.heatShock = 0;
     // Central-bank loans: interest then maturities.
@@ -1262,7 +1285,7 @@ class Game {
     if (clauses.length > 16) fail('Too many clauses');
     const parties = [p.id, q.id];
     const c = {
-      id: this.id('C'), name: String(name || 'Contract').trim().slice(0, 40) || 'Contract',
+      id: this.id('C'), name: this.cleanText(name, 40, 'Contract name') || 'Contract',
       parties, proposer: p.id, term: clamp(toInt(term ?? 0, 'term'), 0, 100),
       clauses: clauses.map((cl) => this.normalizeClause(cl, parties)),
       status: 'proposed', created: this.round, start: null, periods: 0, history: [],
@@ -1430,6 +1453,7 @@ class Game {
     this.auction = null;
     this.winner = winner ? winner.id : null;
     this.endReason = reason;
+    this.memory.onFinish();
     this.addLog(`🏆 Game over! ${winner ? winner.name : 'Nobody'} wins.`, 'system');
     if (this.settings.realMoney) this.payout = this.settlePayout(reason);
   }
@@ -1451,7 +1475,7 @@ class Game {
     if (a === 'removeBot') { if (this.status !== 'lobby') fail('Bots leave in the lobby'); return this.removeBot(pid, msg.target); }
     if (a === 'botSpeed') return this.setBotSpeed(pid, msg);
     if (a === 'stake') return this.setStake(pid, msg.amount);
-    if (a === 'chat') { const text = String(msg.text || '').slice(0, 200).trim(); if (text) this.addLog(`${p.name}: ${text}`, 'chat'); return; }
+    if (a === 'chat') return this.chat(p, msg);
     this.requirePlaying();
     if (a !== 'kick' && a !== 'endNow') this.requireAlive(p);
     switch (a) {
@@ -1499,6 +1523,37 @@ class Game {
     }
   }
 
+  // Free text that other players (and AI models) will read, outside chat: injection-checked, no strike.
+  cleanText(text, max, what) {
+    const t = String(text || '').trim().slice(0, max);
+    const c = Guard.check(t);
+    if (!c.ok) fail(`${what} not allowed: it ${Guard.explain(c.reason)} (prompt injection is banned)`);
+    return t;
+  }
+
+  // ---------------------------------------------------------------- table talk
+  // Public chat or a direct message (msg.to = a player id). Stored only in this.memory (RAM, wiped at the
+  // end of the round). Prompt injection is banned: a message that tries to instruct the AI players' models
+  // is rejected before anyone sees it and counts as a strike; three strikes mute the sender for the game.
+  chat(p, msg) {
+    const text = String(msg.text || '').slice(0, 200).trim();
+    if (!text) return null;
+    if (p.muted) fail('You are muted for the rest of the game (prompt-injection strikes)');
+    let to = null;
+    if (msg.to) {
+      to = this.player(String(msg.to));
+      if (to.id === p.id) fail('You cannot message yourself');
+    }
+    const c = Guard.check(text);
+    if (!c.ok) {
+      p.chatStrikes = (p.chatStrikes || 0) + 1;
+      if (p.chatStrikes >= Guard.STRIKES_TO_MUTE) p.muted = true;
+      this.addLog(`🚫 A message from ${p.name} was blocked: ${Guard.explain(c.reason)} (prompt injection is banned) — strike ${p.chatStrikes}/${Guard.STRIKES_TO_MUTE}${p.muted ? ', now muted' : ''}.`, 'system');
+      fail(`Message blocked: it ${Guard.explain(c.reason)}. Prompt injection is banned — strike ${p.chatStrikes} of ${Guard.STRIKES_TO_MUTE}${p.muted ? '; you are now muted' : ''}.`);
+    }
+    return to ? this.memory.postDM(p.id, to.id, text, this.now()) : this.memory.postPublic(p.id, text, this.now());
+  }
+
   // ---------------------------------------------------------------- client view
   // Sealed bids are private: the shared view only says who has bid. `forPlayer` adds that player's own bid.
   auctionView(forPlayer) {
@@ -1513,7 +1568,7 @@ class Game {
   serialize() {
     const playing = this.status !== 'lobby';
     const players = this.players.map((p) => {
-      const base = { id: p.id, name: p.name, token: p.token, color: p.color, host: p.host, bot: p.bot, connected: p.connected, bankrupt: p.bankrupt, stake: p.stake, out: p.out || 0 };
+      const base = { id: p.id, name: p.name, token: p.token, color: p.color, host: p.host, bot: p.bot, agent: p.agent, muted: !!p.muted, chatStrikes: p.chatStrikes || 0, connected: p.connected, bankrupt: p.bankrupt, stake: p.stake, out: p.out || 0 };
       if (!playing) return base;
       const lev = this.leverage(p);
       return {

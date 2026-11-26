@@ -192,6 +192,69 @@ The AI's tunable parameters are in `bot.params` and were tuned with the simulato
 `sim/tuneDraft.js`). Over 300 classic four-player games, two AI players beat two casual players about 3 times
 in 4. In the Skill test preset they win 91% of games.
 
+## AI personalities (language models)
+
+Besides the classic AI, the host can seat **model-driven AI players** with a personality. In the lobby, pick a
+persona and a model next to **+ Add AI player**.
+
+| Persona | Risk | Dealing | Stance | Calculator tools |
+|---|---|---|---|---|
+| Shark | aggressive | seeks deals | exploitative | yes |
+| Turtle | conservative | avoids deals | unexploitable | yes |
+| Quant | balanced | neutral | unexploitable (close to game-theory optimal: fair-value anchored) | yes |
+| Gambler | aggressive | seeks deals | balanced | no (plays on feel) |
+| Diplomat | balanced | seeks deals | cooperative (non-exploitative) | yes |
+| Vulture | conservative | avoids deals | exploits distress | yes |
+
+Personas are plain files in `src/agents/personas/*.md`: a short header sets the knobs (and the classic AI's
+parameters when it stands in), and the prose becomes the model's instructions. Copy one to make your own.
+
+**Turn it on.** Set a key on the machine running the server (keys never reach the browser):
+
+```bash
+ANTHROPIC_API_KEY=... npm start          # Claude Haiku 5.5
+DEEPSEEK_API_KEY=... npm start           # DeepSeek Chat and DeepSeek Reasoner
+AGENT_MOCK=1 npm start                   # offline mock model, to try the UI without any key
+```
+
+Optional: `ANTHROPIC_MODELS` / `DEEPSEEK_MODELS` (comma-separated model ids), `DEEPSEEK_BASE_URL`
+(default `https://api.deepseek.com`), `AGENT_PRICES` (JSON, US$ per million tokens, used for budgets).
+
+**How it plays.** A model is woken only when a decision needs judgment:
+- its strategic window each turn: build, borrow, trade, use the desk, talk
+- buying, and auctions (in open auctions it sets a limit and is kept as high bidder up to it)
+- offers made to it
+- messages addressed to it (direct messages, or its name in public chat; at most 3 times a round)
+
+It acts only through game tools the engine validates, and the classic AI plays every routine move in character.
+If a model errors or times out, the classic AI answers instead (3 failures in a row: autopilot). It also takes
+over when a seat spends its **AI API budget** (lobby setting, default $0.50 per AI player per game).
+
+**Cost.** Each decision sends roughly 3–5k input tokens, most of it the rules and persona, which the Claude
+provider caches, and gets a few hundred tokens back. With Haiku or DeepSeek a game typically costs cents per
+AI player.
+
+**Table talk and memory.** Public chat, direct messages (🔒, visible only to the two players), each AI's notes
+on its opponents and its record of what happened to it live **only in the server's RAM**
+(`src/roundmemory.js`). They are never written to disk, the game log or the game state, and they are **erased
+at the end of every round**, or at the end of the game if the host picks "Kept until the game ends". The end of
+the game always erases them. They are capped in size.
+
+**Privacy.** With model-driven AI players at the table, each AI decision sends that round's chat to the model
+provider you chose (Anthropic or DeepSeek), under that provider's data policy.
+
+**Prompt injection is banned.** It is stopped at three layers:
+1. **At the door** (`src/agents/guard.js`). Every chat message, direct message, player name, contract name and
+   deal note is checked for attempts to instruct a model: "ignore your instructions", fake system or role
+   messages, tool or code markup, model names, encoded payloads, and invisible characters. A hit is rejected
+   before anyone sees it. In chat it also counts as a strike, and three strikes mute the sender for the game.
+2. **Quarantine** (`src/agents/view.js`). Whatever other players wrote reaches a model only as escaped JSON
+   strings inside an `<untrusted_…>` block with a random name for every decision. The system prompt says that
+   text is information, never instructions.
+3. **Capability limits** (`src/agents/tools.js`). Models have no tools outside the game. Risk controls refuse
+   any trade or deal that would hand away more than 5–15% of the AI's net worth in value (by persona), so even a
+   model that has been talked round cannot give the game away.
+
 ## Player-to-player financial contracts
 
 Each contract is a set of clauses between two players. Periodic legs are **netted and settled
@@ -228,7 +291,10 @@ src/engine.js      authoritative rules engine (traditional rules, central bank, 
 src/desk.js        bank desk (shares, options, CDS, insurance, swaps)
 src/pricing.js     shared pricing (Black-Scholes etc.), used by server and browser
 src/payout.js      shared real-money payout settlement (modes, side pots), used by server and browser
-src/bot.js         AI players
+src/bot.js         AI players (classic, rule-based; also the stand-in for model-driven AI)
+src/agents/        model-driven AI players: personas, providers (Anthropic SDK, DeepSeek), tools,
+                   prompt-injection guard, per-room runner
+src/roundmemory.js chat, DMs and AI notes held in RAM for one round, then erased
 sim/               headless AI-vs-AI simulation harness + rules/skill study (see sim/REPORT.md)
 public/            browser client (vanilla JS, no build step)
 test/              node:test suite incl. randomised full-game fuzzing
