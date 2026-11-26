@@ -1,0 +1,134 @@
+{
+ "classicBankLiq": {
+  "rounds": 64.35,
+  "finished": 0.92,
+  "busts": 2.9,
+  "distressSales": 0,
+  "distressProceeds": 0,
+  "estateBuys": 0,
+  "overall": {
+   "d": 0.61,
+   "win": 0.697,
+   "games": 22
+  },
+  "negotiation": {
+   "d": 0.28,
+   "win": 0.61,
+   "games": 98
+  },
+  "leverage": {
+   "d": 0.8,
+   "win": 0.803,
+   "games": 13
+  },
+  "sizing": {
+   "d": -0.05,
+   "win": 0.477,
+   "games": null
+  },
+  "distress": {
+   "d": -0.03,
+   "win": 0.483,
+   "games": null
+  }
+ },
+ "classic": {
+  "rounds": 56.92666666666667,
+  "finished": 0.95,
+  "busts": 2.93,
+  "distressSales": 21.37,
+  "distressProceeds": 2538.29,
+  "estateBuys": 0.1,
+  "overall": {
+   "d": 0.64,
+   "win": 0.703,
+   "games": 20
+  },
+  "negotiation": {
+   "d": 0.26,
+   "win": 0.6,
+   "games": 120
+  },
+  "leverage": {
+   "d": 0.97,
+   "win": 0.843,
+   "games": 9
+  },
+  "sizing": {
+   "d": -0.12,
+   "win": 0.437,
+   "games": null
+  },
+  "distress": {
+   "d": -0.09,
+   "win": 0.453,
+   "games": null
+  }
+ },
+ "skillBankLiq": {
+  "rounds": 37.97,
+  "finished": 1,
+  "busts": 1.64,
+  "distressSales": 0,
+  "distressProceeds": 0,
+  "estateBuys": 0,
+  "overall": {
+   "d": 1.14,
+   "win": 0.913,
+   "games": 14
+  },
+  "negotiation": {
+   "d": 0.54,
+   "win": 0.608,
+   "games": 54
+  },
+  "leverage": {
+   "d": 1,
+   "win": 0.703,
+   "games": 16
+  },
+  "sizing": {
+   "d": 0.29,
+   "win": 0.575,
+   "games": 190
+  },
+  "distress": {
+   "d": 0,
+   "win": 0.5,
+   "games": null
+  }
+ },
+ "skill": {
+  "rounds": 36.803333333333335,
+  "finished": 1,
+  "busts": 1.7266666666666666,
+  "distressSales": 12.07,
+  "distressProceeds": 1176.4266666666667,
+  "estateBuys": 0.12,
+  "overall": {
+   "d": 1.13,
+   "win": 0.912,
+   "games": 14
+  },
+  "negotiation": {
+   "d": 0.56,
+   "win": 0.605,
+   "games": 52
+  },
+  "leverage": {
+   "d": 1.04,
+   "win": 0.727,
+   "games": 16
+  },
+  "sizing": {
+   "d": 0.67,
+   "win": 0.685,
+   "games": 36
+  },
+  "distress": {
+   "d": 0.04,
+   "win": 0.5,
+   "games": 8998
+  }
+ }
+}

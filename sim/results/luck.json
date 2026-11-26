@@ -1,0 +1,51 @@
+{
+ "N": 2000,
+ "seatWinRate": [
+  0.273,
+  0.241,
+  0.264,
+  0.222
+ ],
+ "table": {
+  "cardsNet": {
+   "corrShare": -0.10899149096824785,
+   "corrWin": -0.1154049073918772
+  },
+  "landUnowned": {
+   "corrShare": 0.4346249017143353,
+   "corrWin": 0.4006258509057316
+  },
+  "taxAndBail": {
+   "corrShare": -0.20773726835992945,
+   "corrWin": -0.18260253575277674
+  },
+  "biggestRentHit": {
+   "corrShare": 0.4614041481573078,
+   "corrWin": 0.4588837636725574
+  },
+  "salaryLaps": {
+   "corrShare": 0.3399261488211351,
+   "corrWin": 0.3069892370033654
+  },
+  "firstSetRound": {
+   "corrShare": 0.45055845681923984,
+   "corrWin": 0.45661586083559513
+  }
+ },
+ "R2pure": 0.48416732706369237,
+ "R2withSet": 0.5285856722273554,
+ "lockIn": {
+  "5": 0.3035,
+  "10": 0.375,
+  "20": 0.4615,
+  "30": 0.6246864024084295,
+  "40": 0.7572765072765073
+ },
+ "firstSetWinRate": 0.6446945337620579,
+ "rounds": 76.999,
+ "finishedRate": 0.6915,
+ "actions": 894.9585,
+ "tradesPerGame": 2.8325,
+ "auctionsWonPerGame": 11.5295,
+ "boughtPerGame": 24.894
+}

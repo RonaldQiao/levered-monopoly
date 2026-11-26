@@ -9,7 +9,10 @@ const { Game, GameError } = require('./src/engine');
 const { SPACES, GROUPS } = require('./src/board');
 const bot = require('./src/bot');
 
-const BOT_DELAY = Number(process.env.BOT_DELAY) || 650; // ms between bot actions so humans can follow along
+// Default ms between AI moves for new rooms; the host changes it per room from the game screen.
+const BOT_DELAY = Number(process.env.BOT_DELAY) || 0;
+// While AI players are paused they still answer these (so auctions and offers never stall).
+const PASSIVE = new Set(['bid', 'passAuction', 'acceptTrade', 'rejectTrade', 'acceptContract', 'rejectContract']);
 
 const PORT = Number(process.env.PORT) || 3000;
 const HOST = process.env.HOST || '0.0.0.0';
@@ -47,23 +50,32 @@ function broadcast(room) {
   room.game.version++;
   const state = room.game.serialize();
   const data = JSON.stringify({ type: 'state', state });
-  for (const ws of room.sockets) if (ws.readyState === 1) ws.send(data);
+  const sealed = state.auction && state.auction.sealed;
+  for (const ws of room.sockets) {
+    if (ws.readyState !== 1) continue;
+    // Sealed bids are private: each player is sent only their own bid.
+    ws.send(sealed ? JSON.stringify({ type: 'state', state: { ...state, auction: room.game.auctionView(ws.playerId) } }) : data);
+  }
   scheduleTick(room);
   scheduleBots(room);
 }
 
-// One bot action per tick: ask each bot in seat order, apply the first action anyone wants.
+// One bot action per tick: ask the bots in a random order (a fixed order would hand every tied
+// auction bid to the same seat), apply the first action anyone wants.
 function scheduleBots(room) {
   clearTimeout(room.botTimer);
   const g = room.game;
   if (g.status !== 'playing' || !g.players.some((p) => p.bot && !p.bankrupt)) return;
   room.botTimer = setTimeout(() => {
     room.botFails ||= {};
-    for (const p of g.players) {
+    const order = g.players.slice();
+    for (let k = order.length - 1; k > 0; k--) { const j = crypto.randomInt(k + 1); [order[k], order[j]] = [order[j], order[k]]; }
+    for (const p of order) {
       if (!p.bot || p.bankrupt) continue;
       let a = null;
       try { a = bot.decide(g, p.id); } catch (e) { console.error('bot decide error', e); }
       if (!a) continue;
+      if (g.settings.botsPaused && !PASSIVE.has(a.action)) continue;
       try {
         g.apply(p.id, a);
         room.botFails[p.id] = 0;
@@ -75,7 +87,15 @@ function scheduleBots(room) {
       }
       return broadcast(room);
     }
-  }, g.auction ? BOT_DELAY + 250 : BOT_DELAY);
+  }, botDelay(g));
+}
+
+// Sealed bids are private, so AI players submit them quickly; in open auctions they keep a pace that
+// still fits inside the 12s bidding window; everything else follows the host's speed setting.
+function botDelay(g) {
+  const d = g.settings.botDelay || 1500;
+  if (g.auction) return g.auction.sealed ? Math.min(250, d) : Math.min(d, 3000) + 250;
+  return d;
 }
 
 function scheduleTick(room) {
@@ -97,7 +117,21 @@ function attach(ws, room, playerId, token) {
 
 const wss = new WebSocketServer({ server, maxPayload: 64 * 1024 });
 
+// Keepalive: hosting proxies (Render, Cloudflare, nginx...) drop WebSockets that are idle for ~60s, and a
+// dead connection would otherwise linger. Ping every 25s; a socket that missed the last ping is closed, and
+// the browser reconnects and resumes its seat.
+const keepalive = setInterval(() => {
+  for (const ws of wss.clients) {
+    if (ws.isAlive === false) { ws.terminate(); continue; }
+    ws.isAlive = false;
+    try { ws.ping(); } catch { /* closing */ }
+  }
+}, 25000);
+wss.on('close', () => clearInterval(keepalive));
+
 wss.on('connection', (ws) => {
+  ws.isAlive = true;
+  ws.on('pong', () => { ws.isAlive = true; });
   ws.on('message', (raw) => {
     let msg;
     try { msg = JSON.parse(raw); } catch { return; }
@@ -105,6 +139,7 @@ wss.on('connection', (ws) => {
       if (msg.type === 'create') {
         const code = newCode();
         const room = { game: new Game(code), sockets: new Set(), tokens: new Map(), timer: null };
+        if (BOT_DELAY) room.game.settings.botDelay = BOT_DELAY;
         rooms.set(code, room);
         const p = room.game.addPlayer(msg.name);
         const token = crypto.randomBytes(16).toString('hex');

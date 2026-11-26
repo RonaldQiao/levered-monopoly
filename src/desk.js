@@ -5,7 +5,7 @@
 //
 // Installed onto Game.prototype; touches the core rules only through a few hooks
 // (round start, rent paid, bankruptcy, net worth).
-const { DESK, optionAsk, optionBid, shareAskCost, shareBidProceeds, issueProceeds, cdsPremium, turnLanding } = require('./pricing');
+const { DESK, optionAsk, optionBid, shareAskCost, shareBidProceeds, issueProceeds, cdsPremium, turnLanding, dealPrice } = require('./pricing');
 const { LAND } = require('./board');
 
 const PRODUCTS = ['shares', 'short', 'issue', 'call', 'put', 'cds', 'insurance', 'swap'];
@@ -115,8 +115,14 @@ module.exports = function installDesk(Game, { fail, toInt, toNum, clamp, round2 
       }
       return Math.max(DESK.insuranceMin, Math.round(e * moveChance * DESK.insuranceLoad));
     },
+    // Swap mid = the expected path of the policy rate (the curve without its term premium), so neither side
+    // earns free carry; the desk earns its spread on both sides.
+    swapMid(term) { return this.curveRate(term) - this.termPremium(term); },
+    // The price the desk deals at for pid: the worse of the round mark and the live price for the customer
+    // (see pricing.dealPrice). Balance-sheet values use the stored mark only, which keeps valuations loop-free.
+    deal(pid, side) { return round2(dealPrice(this.markPrice(pid), this.player(pid).bankrupt ? 0 : this.livePrice(pid), side)); },
     swapRate(term, side) {
-      const mid = this.curveRate(term);
+      const mid = this.swapMid(term);
       return round2(side === 'payFixed' ? mid + DESK.swapSpread : mid - DESK.swapSpread);
     },
     deskLimit(p) { return Math.max(this.scale(500), 2 * Math.max(0, this.bookEquity(p))); },
@@ -128,10 +134,10 @@ module.exports = function installDesk(Game, { fail, toInt, toNum, clamp, round2 
     shortInterest(ref) { return this.desk.positions.filter((x) => x.type === 'short' && x.ref === ref).reduce((a, x) => a + x.shares, 0); },
     storedHazard(ref) { return this.player(ref).bankrupt ? 1 : (this.desk.marks[ref] ? this.desk.marks[ref].hazard || 0 : 0); },
     shortFee(x) { return Math.max(1, Math.round(x.shares * this.markPrice(x.ref) * (DESK.shortFeeBase + DESK.shortFeeHazard * this.storedHazard(x.ref)))); },
-    coverCost(x) {
+    coverCost(x, atDeal = false) {
       if (this.player(x.ref).bankrupt) return 0;
       const e = this.desk.equity[x.ref];
-      return shareAskCost(this.markPrice(x.ref), x.shares, e.inv, this.outsideShares(x.ref));
+      return shareAskCost(atDeal ? this.deal(x.ref, 'ask') : this.markPrice(x.ref), x.shares, e.inv, this.outsideShares(x.ref));
     },
     cdsCap(ref) { return Math.max(this.scale(500), Math.round(1.5 * Math.max(0, this.bookEquity(this.player(ref))))); },
     deskInventoryValue() {
@@ -168,8 +174,8 @@ module.exports = function installDesk(Game, { fail, toInt, toNum, clamp, round2 
         const held = mine.filter((x) => x.type === 'shares' && x.ref === r.id).reduce((a, x) => a + x.shares, 0);
         if (n < 1 || held + n > DESK.maxSharesPerName) fail(`You can hold at most ${DESK.maxSharesPerName} shares of one player`);
         if (n > e.inv) fail(e.inv ? `Only ${e.inv} ${r.name} shares are available — more exist only if ${r.name} issues them` : `No ${r.name} shares are available — ${r.name} would have to issue more`);
-        const price = this.markPrice(r.id);
-        if (price <= 0) fail(`${r.name}'s shares have no value`);
+        const price = this.deal(r.id, 'ask');
+        if (this.markPrice(r.id) <= 0 || price <= 0) fail(`${r.name}'s shares have no value`);
         const cost = shareAskCost(price, n, e.inv, this.outsideShares(r.id));
         if (p.cash < cost) fail(`Need $${cost}`);
         this.deskPay(p.id, null, cost, `bought ${n} shares of ${r.name} (mark $${price.toFixed(2)})`);
@@ -184,8 +190,8 @@ module.exports = function installDesk(Game, { fail, toInt, toNum, clamp, round2 
         if (n < 1 || mineShort + n > DESK.maxShortPerName) fail(`You can be short at most ${DESK.maxShortPerName} shares of one player`);
         const left = e.float - this.shortInterest(r.id);
         if (n > left) fail(left > 0 ? `Only ${left} ${r.name} shares are left to borrow` : `No ${r.name} shares are left to borrow`);
-        const price = this.markPrice(r.id);
-        if (price <= 0) fail(`${r.name}'s shares have no value to short`);
+        const price = this.deal(r.id, 'bid');
+        if (this.markPrice(r.id) <= 0 || price <= 0) fail(`${r.name}'s shares have no value to short`);
         const proceeds = shareBidProceeds(price, n, e.inv, this.outsideShares(r.id), this.storedHazard(r.id));
         this.deskPay(null, p.id, proceeds, `short sold ${n} shares of ${r.name} (mark $${price.toFixed(2)})`);
         this.print(this.ticker(r.id), 'short', n, proceeds / n, p.id, 'bank');
@@ -216,7 +222,9 @@ module.exports = function installDesk(Game, { fail, toInt, toNum, clamp, round2 
         const h = this.hazard(r.id);
         if (h > DESK.optionMaxHazard) fail(`The bank is not writing options on ${r.name} while their default risk is ${pctH(h)} a round`);
         if (this.optionExposure(r.id) + n > DESK.maxOptionSharesPerName) fail(`The bank's option book on ${r.name} is full (${DESK.maxOptionSharesPerName} shares)`);
-        const premium = optionAsk(product, m.price, K, t, this.econ.policyRate, m.vol, n);
+        if (product === 'put' && r.cash < 0) fail(`${r.name} is in distress (below $0) — no new puts until they recover`);
+        const S = this.deal(r.id, product === 'call' ? 'ask' : 'bid');
+        const premium = optionAsk(product, S, K, t, this.econ.policyRate, m.vol, n);
         if (p.cash < premium) fail(`Need $${premium} premium`);
         this.deskPay(p.id, null, premium, `${product} on ${n} ${r.name} shares, strike $${K}`);
         this.print(`${this.ticker(r.id)} ${K}${product === 'call' ? 'C' : 'P'}`, 'buy', n, premium / n, p.id, 'bank');
@@ -224,6 +232,7 @@ module.exports = function installDesk(Game, { fail, toInt, toNum, clamp, round2 
       } else if (product === 'cds') {
         const r = refPlayer(); const t = term(); const notional = toInt(o.notional, 'notional');
         if (notional < 50 || notional > this.deskLimit(p)) fail(`Notional must be $50 to $${this.deskLimit(p)}`);
+        if (r.cash < 0) fail(`${r.name} is in distress (below $0) — the desk won't sell protection on them now`);
         const h = this.hazard(r.id);
         if (h > DESK.cdsMaxHazard) fail(`The bank is not selling protection on ${r.name} — default risk ${pctH(h)} a round is too high to price`);
         const cap = this.cdsCap(r.id); const used = this.cdsExposure(r.id);
@@ -243,7 +252,8 @@ module.exports = function installDesk(Game, { fail, toInt, toNum, clamp, round2 
       } else if (product === 'swap') {
         const side = o.side === 'receiveFixed' ? 'receiveFixed' : 'payFixed';
         const t = term(); const notional = toInt(o.notional, 'notional');
-        if (notional < 100 || notional > this.deskLimit(p)) fail(`Notional must be $100 to $${this.deskLimit(p)}`);
+        const open = mine.filter((x) => x.type === 'swap').reduce((a, x) => a + x.notional, 0);
+        if (notional < 100 || open + notional > this.deskLimit(p)) fail(`Total swap notional is capped at ${this.deskLimit(p)} (you have ${open} open)`);
         Object.assign(pos, { side, notional, fixed: this.swapRate(t, side), expiry: this.round + t });
       }
       this.desk.positions.push(pos);
@@ -266,20 +276,21 @@ module.exports = function installDesk(Game, { fail, toInt, toNum, clamp, round2 
 
     optionPayoff(x, S) { return Math.round(x.shares * Math.max(0, x.type === 'call' ? S - x.strike : x.strike - S)); },
     // What the bank pays to buy an option back now: fair value (with the time left) minus its spread.
-    optionBidValue(x) {
+    optionBidValue(x, atDeal = false) {
       const m = this.desk.marks[x.ref];
-      return optionBid(x.type, this.markPrice(x.ref), x.strike, Math.max(0, x.expiry - this.round), this.econ.policyRate, m ? m.vol : 0.2, x.shares);
+      const S = atDeal ? this.deal(x.ref, x.type === 'call' ? 'bid' : 'ask') : this.markPrice(x.ref);
+      return optionBid(x.type, S, x.strike, Math.max(0, x.expiry - this.round), this.econ.policyRate, m ? m.vol : 0.2, x.shares);
     },
-    sharesBidValue(x) {
+    sharesBidValue(x, atDeal = false) {
       const e = this.desk.equity[x.ref];
-      return shareBidProceeds(this.markPrice(x.ref), x.shares, e.inv, this.outsideShares(x.ref), this.storedHazard(x.ref));
+      return shareBidProceeds(atDeal ? this.deal(x.ref, 'bid') : this.markPrice(x.ref), x.shares, e.inv, this.outsideShares(x.ref), this.storedHazard(x.ref));
     },
 
     swapMtm(x) {
       const left = Math.max(0, x.expiry - this.round);
       if (!left) return 0;
       const sign = x.side === 'payFixed' ? 1 : -1;
-      return Math.round((sign * x.notional * (this.curveRate(left) - x.fixed) * left) / 100);
+      return Math.round((sign * x.notional * (this.swapMid(left) - x.fixed) * left) / 100);
     },
 
     deskClose(p, id) {
@@ -288,17 +299,17 @@ module.exports = function installDesk(Game, { fail, toInt, toNum, clamp, round2 
       if (!x) fail('Position not found');
       if (x.type === 'cdsSold') fail('Protection you sold to the bank runs to expiry');
       if (x.type === 'short') {
-        const cost = this.coverCost(x);
+        const cost = this.coverCost(x, true);
         if (p.cash < cost) fail(`Covering costs $${cost} — not enough cash`);
         this.deskPay(p.id, null, cost, `covered short of ${x.shares} ${this.player(x.ref).name} shares (mark $${this.markPrice(x.ref).toFixed(2)})`);
         this.print(this.ticker(x.ref), 'cover', x.shares, cost / x.shares, p.id, 'bank');
       } else if (x.type === 'shares') {
-        const proceeds = this.sharesBidValue(x);
+        const proceeds = this.sharesBidValue(x, true);
         this.deskPay(null, p.id, proceeds, `sold ${x.shares} shares of ${this.player(x.ref).name} (mark $${this.markPrice(x.ref).toFixed(2)})`);
         this.print(this.ticker(x.ref), 'sell', x.shares, proceeds / x.shares, p.id, 'bank');
         this.desk.equity[x.ref].inv += x.shares;
       } else if (x.type === 'call' || x.type === 'put') {
-        const v = this.optionBidValue(x);
+        const v = this.optionBidValue(x, true);
         if (v > 0) this.deskPay(null, p.id, v, `${x.type} sold back to the bank`);
         else this.addLog(`🏛 ${p.name} closes a worthless ${x.type}.`, 'bank');
         this.print(`${this.ticker(x.ref)} ${x.strike}${x.type === 'call' ? 'C' : 'P'}`, 'sell', x.shares, v / x.shares, p.id, 'bank');
@@ -424,9 +435,10 @@ module.exports = function installDesk(Game, { fail, toInt, toNum, clamp, round2 
     },
 
     deskView() {
-      const hazards = {}; const insurance = {}; const equity = {};
+      const hazards = {}; const insurance = {}; const equity = {}; const live = {};
       for (const p of this.players) {
         hazards[p.id] = p.bankrupt ? 1 : this.hazard(p.id);
+        live[p.id] = p.bankrupt ? 0 : round2(this.livePrice(p.id));
         if (!p.bankrupt) insurance[p.id] = Object.fromEntries(DESK.deductibles.map((d) => [d, this.insuranceQuote(p.id, d)]));
         const e = this.desk.equity[p.id];
         equity[p.id] = {
@@ -437,7 +449,7 @@ module.exports = function installDesk(Game, { fail, toInt, toNum, clamp, round2 
       const inventoryValue = Math.round(this.deskInventoryValue());
       const positions = this.desk.positions.map((x) => (x.type === 'short' ? { ...x, coverCost: this.coverCost(x), fee: this.shortFee(x) } : x));
       return {
-        positions, marks: this.desk.marks, pnl: this.desk.pnl, hazards, insurance, equity, axes: this.bankAxes(),
+        positions, marks: this.desk.marks, live, pnl: this.desk.pnl, hazards, insurance, equity, axes: this.bankAxes(),
         inventoryValue, totalPnl: Math.round(this.desk.pnl + inventoryValue - this.desk.startInventoryValue),
         swapRates: Object.fromEntries(DESK.terms.map((t) => [t, { payFixed: this.swapRate(t, 'payFixed'), receiveFixed: this.swapRate(t, 'receiveFixed') }])),
       };

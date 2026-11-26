@@ -30,8 +30,49 @@ const DEFAULT_SETTINGS = {
   auctions: true,
   salary: 200,
   neutralRate: 1.5,    // % per round, neutral REAL policy rate (nominal anchor = neutral + target inflation)
-  inflationTarget: 0.5 // % per round
+  inflationTarget: 0.5, // % per round
+  acquisition: 'land',     // 'land': buy what you land on | 'draft': every lot is auctioned before round 1
+  auctionFormat: 'english', // auctions on declined lots: 'english' (open outcry) | 'sealed' (sealed-bid, second price)
+  diceMode: 'random',      // 'random' | 'seeded': fixed seat order and per-seat dice/card streams from `seed`
+  seed: null,              // seeded mode: replay the same seed with seats rotated for a duplicate match
+  moneyCards: true,        // false: decks keep only the macro-shock cards
+  jail: true,
+  doubles: true,           // false: doubles don't grant extra rolls
+  creditModel: 'classic',  // 'riskPriced': steeper credit spread, re-priced on all bank debt every round
+  maxRounds: 0,            // > 0: game ends after this round, highest net worth wins
+  liquidation: 'auction',  // 'auction': distressed property is sold to players by sealed bid | 'bank': bank only
+  botDelay: 1500,          // ms between AI moves; the host can change it at any time, even mid-game
+  botsPaused: false,       // paused: AI players don't take turns (they still answer auctions and offers)
 };
+const BOT_DELAY_MIN = 200;
+const BOT_DELAY_MAX = 15000;
+
+// "Skill test" preset: chosen by simulation (sim/REPORT.md) to be faster and less luck-dependent
+// while keeping risk: draft instead of landing luck, sealed bids instead of reaction speed, duplicate
+// dice, no pure-noise cards/jail/doubles, and a cost of capital close to property yields.
+const PRESETS = {
+  classic: {
+    startingCash: 1500, maxLeverage: 3, auctions: true, salary: 200, neutralRate: 1.5, acquisition: 'land', auctionFormat: 'english',
+    diceMode: 'random', seed: null, moneyCards: true, jail: true, doubles: true, creditModel: 'classic', maxRounds: 0, liquidation: 'auction',
+  },
+  skill: {
+    startingCash: 1500, maxLeverage: 3, auctions: true, salary: 200, neutralRate: 8, acquisition: 'draft', auctionFormat: 'sealed',
+    diceMode: 'seeded', moneyCards: false, jail: false, doubles: false, creditModel: 'riskPriced', maxRounds: 40, liquidation: 'auction',
+  },
+};
+const CREDIT_SLOPE = { classic: 0.5, riskPriced: 1.5 }; // credit spread, % per unit of leverage above 1
+
+// Small seedable PRNG (mulberry32) for seeded dice.
+function mulberry(a) {
+  a >>>= 0;
+  return () => {
+    a = (a + 0x6D2B79F5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
 
 const LOAN_TERMS = [5, 10, 20];
 const FLOAT_MARGIN = 0.25;                          // floating loans: policy rate + this + credit spread
@@ -132,20 +173,57 @@ class Game {
     if (s.maxLeverage !== undefined) this.settings.maxLeverage = clamp(toNum(s.maxLeverage), 1, 10);
     if (s.auctions !== undefined) this.settings.auctions = !!s.auctions;
     if (s.salary !== undefined) this.settings.salary = clamp(toInt(s.salary), 50, 1000);
+    if (s.preset !== undefined) {
+      if (!PRESETS[s.preset]) fail('Unknown preset');
+      Object.assign(this.settings, PRESETS[s.preset]);
+    }
+    const pick = (k, opts) => { if (s[k] !== undefined) { if (!opts.includes(s[k])) fail(`Invalid ${k}`); this.settings[k] = s[k]; } };
+    const flag = (k) => { if (s[k] !== undefined) this.settings[k] = s[k] === true || s[k] === 'true' || s[k] === 1 || s[k] === '1'; };
+    pick('acquisition', ['land', 'draft']);
+    pick('auctionFormat', ['english', 'sealed']);
+    pick('diceMode', ['random', 'seeded']);
+    pick('creditModel', ['classic', 'riskPriced']);
+    pick('liquidation', ['auction', 'bank']);
+    flag('moneyCards'); flag('jail'); flag('doubles');
+    if (s.neutralRate !== undefined) this.settings.neutralRate = clamp(toNum(s.neutralRate), 0, 12);
+    if (s.maxRounds !== undefined) this.settings.maxRounds = clamp(toInt(s.maxRounds || 0), 0, 500);
+    if (s.seed !== undefined) this.settings.seed = s.seed === null || s.seed === '' ? null : clamp(toInt(s.seed, 'seed'), 0, 2 ** 31 - 1);
+  }
+
+  // AI speed is a table setting, not a rule: the host can change it in the lobby or mid-game.
+  setBotSpeed(pid, { delay, paused } = {}) {
+    this.requireHost(pid);
+    if (delay !== undefined) this.settings.botDelay = clamp(toInt(delay, 'delay'), BOT_DELAY_MIN, BOT_DELAY_MAX);
+    if (paused !== undefined) this.settings.botsPaused = paused === true || paused === 'true';
+    const host = this.player(pid).name;
+    if (this.status === 'playing') {
+      this.addLog(this.settings.botsPaused
+        ? `⏸ ${host} paused the AI players. They still answer auctions and offers but won't take turns.`
+        : `⏱ ${host} set the AI speed to ${(this.settings.botDelay / 1000).toFixed(1)}s per move.`, 'system');
+    }
   }
 
   start(pid) {
     this.requireHost(pid);
     if (this.status !== 'lobby') fail('Already started');
     if (this.players.length < 2) fail('Need at least 2 players');
-    this.players = shuffle(this.players, this.rng);
+    if (this.settings.diceMode === 'seeded') {
+      // Seat order = join order; every seat gets its own dice and card stream, so the same seed replayed
+      // with players rotated through the seats gives everyone the same luck (a duplicate match).
+      if (this.settings.seed === null) this.settings.seed = Math.floor(this.rng() * 2 ** 31);
+      const seed = this.settings.seed;
+      this.rng = mulberry(seed);
+      this.seatDice = this.players.map((_, k) => mulberry(seed + 7919 * (k + 1)));
+      this.seatCards = this.players.map((_, k) => mulberry(seed + 104729 * (k + 1)));
+    } else this.players = shuffle(this.players, this.rng);
     for (const p of this.players) p.cash = this.settings.startingCash;
     SPACES.forEach((s) => {
       if (OWNABLE.has(s.type)) this.props[s.index] = { owner: null, houses: 0, mortgaged: false, mortgageAmt: 0 };
     });
+    const keep = (c) => this.settings.moneyCards || c.type.startsWith('macro');
     this.decks = {
-      event: shuffle(EVENT_CARDS.map((_, i) => i), this.rng),
-      treasury: shuffle(TREASURY_CARDS.map((_, i) => i), this.rng),
+      event: shuffle(EVENT_CARDS.map((_, i) => i).filter((i) => keep(EVENT_CARDS[i])), this.rng),
+      treasury: shuffle(TREASURY_CARDS.map((_, i) => i).filter((i) => keep(TREASURY_CARDS[i])), this.rng),
     };
     this.bankHouses = 32;
     this.bankHotels = 12;
@@ -156,6 +234,7 @@ class Game {
       bankLosses: 0, history: [],
     };
     this.status = 'playing';
+    this.saleQueue = [];
     this.initDesk();
     this.initMarket();
     this.round = 0;
@@ -163,7 +242,15 @@ class Game {
     this.round = 1;
     this.turn = this.freshTurn(0);
     this.addLog(`Game started! Turn order: ${this.players.map((p) => p.name).join(' → ')}.`, 'system');
+    if (this.settings.diceMode === 'seeded') this.addLog(`Seeded dice: seed ${this.settings.seed}. Replay this seed with the seats rotated for a duplicate match.`, 'system');
+    if (this.settings.maxRounds) this.addLog(`The game ends after round ${this.settings.maxRounds}; highest net worth wins.`, 'system');
     this.addLog(`Central bank policy rate opens at ${this.econ.policyRate.toFixed(2)}% per round.`, 'econ');
+    if (this.settings.acquisition === 'draft') {
+      this.draftQueue = shuffle(Object.keys(this.props).map(Number), this.rng);
+      this.turn.phase = 'draft';
+      this.addLog(`📋 Opening draft: all ${this.draftQueue.length} properties go to sealed-bid auction (highest bid wins, pays the second-highest bid).`, 'system');
+      this.openAuction(this.draftQueue.shift(), true);
+    }
   }
 
   freshTurn(idx) {
@@ -317,7 +404,7 @@ class Game {
   creditSpread(p, extra = 0) {
     const eq = this.bookEquity(p);
     const lev = eq > 0 ? (this.assets(p) + extra) / eq : 10;
-    return 0.5 * Math.max(0, lev - 1);
+    return (CREDIT_SLOPE[this.settings.creditModel] || 0.5) * Math.max(0, lev - 1);
   }
   // Floating = policy + 0.25% + credit spread, reset every round.
   // Fixed = max(curve, floating base) + a lock-in premium + credit spread, so fixed always costs more at signing.
@@ -377,8 +464,9 @@ class Game {
   }
 
   sendToJail(p) {
-    p.pos = JAIL_INDEX; p.inJail = true; p.jailTurns = 0;
     if (this.turn && this.current().id === p.id) this.turn.extraRoll = false;
+    if (!this.settings.jail) { this.addLog(`${p.name} would go to Lockup, but Lockup is off — turn ends.`); return; }
+    p.pos = JAIL_INDEX; p.inJail = true; p.jailTurns = 0;
     this.addLog(`${p.name} is sent to Lockup!`, 'warn');
   }
 
@@ -386,6 +474,7 @@ class Game {
     const i = p.pos; const s = SPACES[i];
     if (OWNABLE.has(s.type)) {
       const pr = this.props[i];
+      if (!pr.owner && pr.estate) { this.addLog(`${s.name} is waiting for its estate auction.`); return; }
       if (!pr.owner) {
         this.turn.phase = 'buy';
         this.turn.pendingBuy = i;
@@ -413,6 +502,12 @@ class Game {
   drawCard(p, deck) {
     const list = deck === 'event' ? EVENT_CARDS : TREASURY_CARDS;
     const order = this.decks[deck];
+    if (!order.length) return;
+    if (this.seatCards) {
+      // seeded mode: each seat draws from its own stream, so a seat's cards don't depend on other seats' paths
+      const k = Math.floor(this.seatCards[this.players.indexOf(p)]() * order.length);
+      order.unshift(order.splice(k, 1)[0]);
+    }
     const idx = order.shift();
     const card = list[idx];
     if (card.type !== 'jailCard') order.push(idx);
@@ -455,20 +550,25 @@ class Game {
     if (card.heat) { e.heatShock += card.heat; }
   }
 
-  die() { return 1 + Math.floor(this.rng() * 6); }
+  die() {
+    const r = this.seatDice && this.turn ? this.seatDice[this.turn.idx] : this.rng;
+    return 1 + Math.floor(r() * 6);
+  }
 
   // ---------------------------------------------------------------- turn actions
   roll(p) {
     this.requireTurn(p);
     if (this.turn.phase !== 'roll') fail('You cannot roll right now');
+    if (this.auction) fail('Wait for the auction to close');
     if (p.cash < 0) fail('You have negative cash — raise funds or declare bankruptcy first');
     const d = [this.die(), this.die()];
-    const doubles = d[0] === d[1];
+    const pair = d[0] === d[1];
+    const doubles = pair && this.settings.doubles; // with doubles off, a pair is just a number
     this.lastRoll = { dice: d, player: p.id, seq: this.nextId++ };
     this.addLog(`${p.name} rolls ${d[0]} + ${d[1]}${doubles ? ' (doubles!)' : ''}.`, 'roll');
     this.turn.extraRoll = false;
     if (p.inJail) {
-      if (doubles) {
+      if (pair) {
         p.inJail = false; p.jailTurns = 0;
         this.addLog(`${p.name} rolled doubles and walks out of Lockup.`);
       } else {
@@ -520,20 +620,37 @@ class Game {
     const i = this.turn.pendingBuy;
     this.turn.pendingBuy = null;
     if (this.settings.auctions && this.active().length > 1) {
-      this.auction = { space: i, highBid: 0, highBidder: null, active: this.active().map((x) => x.id), deadline: this.now() + AUCTION_START_MS };
       this.turn.phase = 'auction';
-      this.addLog(`${SPACES[i].name} goes to auction!`, 'system');
+      this.openAuction(i, false);
     } else {
       this.turn.phase = 'resolving';
       this.finishResolution();
     }
   }
 
+  lotsLabel(lots) { return lots.map((i) => SPACES[i].name).join(' + '); }
+
+  openAuction(i, draft = false) {
+    const sealed = draft || this.settings.auctionFormat === 'sealed';
+    this.auction = { space: i, lots: [i], kind: draft ? 'draft' : 'lot', seller: null, reserve: 1, sealed, draft, highBid: 0, highBidder: null, active: this.active().map((x) => x.id), bids: {}, deadline: this.now() + AUCTION_START_MS };
+    if (draft) this.addLog(`📋 Draft lot ${Object.keys(this.props).length - this.draftQueue.length}/${Object.keys(this.props).length}: ${SPACES[i].name} (list $${this.price(i)}). Submit a sealed bid.`, 'system');
+    else this.addLog(`${SPACES[i].name} goes to ${sealed ? 'sealed-bid ' : ''}auction!`, 'system');
+  }
+
   bid(p, amount) {
     const a = this.auction;
     if (!a) fail('No auction running');
-    if (!a.active.includes(p.id)) fail('You have left this auction');
+    if (!a.active.includes(p.id)) fail(a.sealed ? 'You have already bid or passed on this lot' : 'You have left this auction');
     amount = toInt(amount, 'bid');
+    if (a.sealed) {
+      if (amount < (a.reserve || 1)) fail(`Bid at least $${a.reserve || 1}${a.reserve > 1 ? ' (the reserve)' : ''}`);
+      if (amount > p.cash) fail('You do not have that much cash');
+      a.bids[p.id] = amount;
+      a.active = a.active.filter((x) => x !== p.id);
+      this.addLog(`${p.name} submits a sealed bid for ${this.lotsLabel(a.lots)}.`);
+      this.checkAuctionEnd();
+      return;
+    }
     if (amount <= a.highBid) fail(`Bid must exceed $${a.highBid}`);
     if (amount > p.cash) fail('You do not have that much cash');
     a.highBid = amount; a.highBidder = p.id;
@@ -545,29 +662,131 @@ class Game {
   passAuction(p) {
     const a = this.auction;
     if (!a) fail('No auction running');
-    if (a.highBidder === p.id) fail('You are the high bidder');
+    if (!a.active.includes(p.id)) fail('You are not in this auction');
+    if (!a.sealed && a.highBidder === p.id) fail('You are the high bidder');
     a.active = a.active.filter((x) => x !== p.id);
-    this.addLog(`${p.name} drops out of the auction.`);
+    this.addLog(`${p.name} ${a.sealed ? 'passes on' : 'drops out of the auction for'} ${this.lotsLabel(a.lots)}.`);
     this.checkAuctionEnd();
   }
 
   checkAuctionEnd() {
     const a = this.auction;
-    if (a.active.length === 0 || (a.active.length === 1 && a.active[0] === a.highBidder)) this.closeAuction();
+    if (a.sealed ? a.active.length === 0 : (a.active.length === 0 || (a.active.length === 1 && a.active[0] === a.highBidder))) this.closeAuction();
+  }
+
+  // Sealed bids: highest bid wins (ties drawn at random) and pays the second-highest bid (Vickrey),
+  // so bidding your true value is the best strategy and reaction speed doesn't matter.
+  resolveSealed(a) {
+    const floor = Math.max(1, a.reserve || 1);
+    const bids = shuffle(Object.entries(a.bids).filter(([pid, b]) => !this.player(pid).bankrupt && b >= floor), this.rng).sort((x, y) => y[1] - x[1]);
+    if (bids.length) this.addLog(`Sealed bids for ${this.lotsLabel(a.lots)}: ${bids.map(([pid, b]) => `${this.player(pid).name} $${b}`).join(', ')}.`);
+    for (let k = 0; k < bids.length; k++) {
+      const [pid, b] = bids[k];
+      const price = Math.max(floor, Math.min(b, bids[k + 1] ? bids[k + 1][1] : floor));
+      if (this.player(pid).cash >= price) return { winner: pid, price };
+    }
+    return null;
   }
 
   closeAuction() {
     const a = this.auction;
     this.auction = null;
-    if (a.highBidder && this.player(a.highBidder).cash >= a.highBid) {
-      this.pay(a.highBidder, null, a.highBid, `won auction for ${SPACES[a.space].name}`, { spending: true });
-      this.props[a.space].owner = a.highBidder;
+    const res = a.sealed ? this.resolveSealed(a) : (a.highBidder && this.player(a.highBidder).cash >= a.highBid ? { winner: a.highBidder, price: a.highBid } : null);
+    const label = this.lotsLabel(a.lots);
+    if (a.kind === 'liquidation' || a.kind === 'estate') {
+      this.closeSale(a, res, label);
+    } else if (res) {
+      this.pay(res.winner, null, res.price, `won auction for ${label}`, { spending: true });
+      this.props[a.space].owner = res.winner;
     } else {
-      this.addLog(`Auction for ${SPACES[a.space].name} ended with no sale.`);
+      this.addLog(`Auction for ${label} ended with no sale.`);
     }
-    if (this.status === 'playing' && this.turn.phase === 'auction') {
+    if (this.status !== 'playing') return;
+    if (a.draft) {
+      if (this.draftQueue.length) this.openAuction(this.draftQueue.shift(), true);
+      else if (this.turn.phase === 'draft') { this.turn.phase = 'roll'; this.addLog('📋 The draft is complete. Roll to begin round 1!', 'system'); }
+    } else if (this.turn.phase === 'auction') {
       this.turn.phase = 'resolving';
       this.finishResolution();
+    }
+    this.startQueuedSale();
+  }
+
+  // ---------------------------------------------------------------- distressed sales
+  // An underwater player (below $0 or in a margin call) can sell property to the other players by sealed,
+  // second-price auction instead of only to the bank. A lot in a colour group with buildings is sold as
+  // the whole group, buildings included (buildings can't sit on a split group). The reserve is what the
+  // bank route would raise (half the building cost plus the mortgage value), so the seller never does
+  // worse than the bank. Mortgaged lots pass to the buyer still mortgaged.
+  salePackage(i) {
+    const g = SPACES[i].group;
+    return g && this.groupHasBuildings(g) ? GROUP_MEMBERS[g].slice() : [i];
+  }
+
+  bankValue(lots) {
+    let v = 0;
+    for (const i of lots) {
+      const pr = this.props[i];
+      if (pr.houses) v += Math.round(this.houseCost(i) / 2) * pr.houses;
+      if (!pr.mortgaged) v += this.mortgageValue(i);
+    }
+    return v;
+  }
+
+  liquidate(p, space) {
+    this.requirePlaying(); this.requireAlive(p);
+    if (this.settings.liquidation !== 'auction') fail('Distressed auctions are off in this game — sell to the bank instead');
+    if (p.cash >= 0 && !this.inBreach(p)) fail('You can only auction property when you are below $0 or in a margin call');
+    if (this.auction) fail('Another auction is running — try again when it closes');
+    const i = this.requireOwner(p, space);
+    const lots = this.salePackage(i);
+    for (const j of lots) {
+      if (this.props[j].owner !== p.id) fail(`You don't own all of ${this.lotsLabel(lots)}`);
+      if (this.encumbrances(j).length) fail(`${SPACES[j].name} is pledged under a contract`);
+    }
+    const bidders = this.active().filter((x) => x.id !== p.id).map((x) => x.id);
+    if (!bidders.length) fail('Nobody left to bid');
+    const reserve = Math.max(1, this.bankValue(lots));
+    this.auction = { space: lots[0], lots, kind: 'liquidation', seller: p.id, reserve, sealed: true, draft: false, highBid: 0, highBidder: null, active: bidders, bids: {}, deadline: this.now() + AUCTION_START_MS };
+    this.addLog(`🔨 ${p.name} puts ${this.lotsLabel(lots)}${lots.some((j) => this.props[j].houses) ? ' (with buildings)' : ''} up for a sealed-bid sale. Reserve $${reserve}.`, 'system');
+  }
+
+  // Bankrupt estates: each colour group with buildings is one package (buildings intact), other lots are
+  // sold one by one. The proceeds go to the bank. Unsold lots return to the bank as plain unowned land.
+  queueEstate(p) {
+    const lots = this.ownedBy(p.id);
+    const seen = new Set();
+    for (const i of lots) {
+      if (seen.has(i)) continue;
+      const pkg = this.salePackage(i).filter((j) => this.props[j].owner === p.id);
+      pkg.forEach((j) => seen.add(j));
+      this.saleQueue.push({ lots: pkg, from: p.name });
+    }
+    for (const i of lots) Object.assign(this.props[i], { owner: null, estate: true, mortgaged: false, mortgageAmt: 0 });
+  }
+
+  startQueuedSale() {
+    if (this.auction || this.status !== 'playing' || !this.saleQueue || !this.saleQueue.length) return;
+    const q = this.saleQueue.shift();
+    const bidders = this.active().map((x) => x.id);
+    this.auction = { space: q.lots[0], lots: q.lots, kind: 'estate', seller: null, from: q.from, reserve: 1, sealed: true, draft: false, highBid: 0, highBidder: null, active: bidders, bids: {}, deadline: this.now() + AUCTION_START_MS };
+    this.addLog(`🏛 Estate sale (${q.from}): ${this.lotsLabel(q.lots)}${q.lots.some((j) => this.props[j].houses) ? ' with buildings' : ''}. Submit a sealed bid.`, 'system');
+  }
+
+  closeSale(a, res, label) {
+    const seller = a.seller && !this.player(a.seller).bankrupt ? a.seller : null;
+    if (res) {
+      this.pay(res.winner, seller, res.price, `won ${a.kind === 'estate' ? 'estate' : 'liquidation'} sale of ${label}`, { spending: true });
+      for (const i of a.lots) { this.props[i].owner = res.winner; delete this.props[i].estate; }
+      return;
+    }
+    this.addLog(`${a.kind === 'estate' ? 'Estate' : 'Liquidation'} sale of ${label} ended with no sale${a.kind === 'estate' ? ' — the land returns to the bank' : ''}.`);
+    if (a.kind === 'estate') {
+      for (const i of a.lots) {
+        const pr = this.props[i];
+        if (pr.houses === 5) this.bankHotels++; else this.bankHouses += pr.houses;
+        pr.houses = 0; delete pr.estate;
+      }
     }
   }
 
@@ -664,6 +883,11 @@ class Game {
   }
 
   newRound() {
+    if (this.settings.maxRounds && this.round >= this.settings.maxRounds) {
+      this.addLog(`⏱ Round ${this.round} was the last round — highest net worth wins.`, 'system');
+      this.finish(this.active().slice().sort((a, b) => this.netWorth(b) - this.netWorth(a))[0]);
+      return;
+    }
     this.closeRoundEconomy();
     this.recordHistory();
     this.round++;
@@ -671,7 +895,14 @@ class Game {
     this.econ.heatShock = 0;
     // Central-bank loans: interest then maturities.
     for (const p of this.active()) {
+      const riskPriced = this.settings.creditModel === 'riskPriced';
+      const spread = riskPriced ? this.creditSpread(p) : 0;
       for (const l of p.loans.slice()) {
+        if (riskPriced) {
+          // risk-priced credit: the credit spread on every loan resets each round to current leverage
+          if (l.kind === 'floating') l.margin = round2(FLOAT_MARGIN + (l.penalty || 0) + spread);
+          else l.rate = round2((l.base ?? l.rate) + spread);
+        }
         if (l.kind === 'floating') l.rate = round2(this.econ.policyRate + l.margin);
         const interest = Math.max(1, Math.round(l.principal * l.rate / 100));
         this.pay(p.id, null, interest, `interest on ${l.kind || 'fixed'} bank loan @${l.rate.toFixed(2)}%`);
@@ -680,7 +911,7 @@ class Game {
             this.pay(p.id, null, l.principal, 'bank loan matured — principal repaid');
             p.loans = p.loans.filter((x) => x !== l);
           } else {
-            if (l.kind === 'floating') { l.margin = round2(l.margin + 2); l.rate = round2(this.econ.policyRate + l.margin); } else { l.curveAtOrigin = this.curveRate(5); l.rate = round2(l.curveAtOrigin + 2); }
+            if (l.kind === 'floating') { l.margin = round2(l.margin + 2); l.penalty = (l.penalty || 0) + 2; l.rate = round2(this.econ.policyRate + l.margin); } else { l.curveAtOrigin = this.curveRate(5); l.base = round2(l.curveAtOrigin + 2); l.rate = round2(l.base + spread); }
             l.maturity = this.round + 5;
             l.term = 5;
             this.addLog(`⚠ ${p.name} could not repay a $${l.principal} loan — rolled over at a penalty rate of ${l.rate.toFixed(2)}%.`, 'warn');
@@ -704,6 +935,7 @@ class Game {
     if (amount > room) fail(`Leverage cap: you can borrow at most $${room} more`);
     const rate = this.quote(p, term, amount, kind);
     const loan = { id: this.id('L'), kind, principal: amount, rate, term, start: this.round, maturity: this.round + term };
+    if (kind === 'fixed') loan.base = round2(rate - this.creditSpread(p, amount)); // locked part; the spread re-prices under risk-priced credit
     if (kind === 'floating') loan.margin = round2(rate - this.econ.policyRate);
     else loan.curveAtOrigin = this.curveRate(term);
     p.loans.push(loan);
@@ -1115,6 +1347,8 @@ class Game {
     }
     for (const t of this.trades) if (t.status === 'pending' && (t.from === p.id || t.to === p.id)) t.status = 'cancelled';
     this.marketOnBankrupt(p);
+    if (this.auction && this.auction.seller === p.id) this.auction = null; // their own liquidation sale is replaced by the estate sale
+    if (this.settings.liquidation === 'auction' && this.active().length > 2) this.queueEstate(p);
     for (const i of this.ownedBy(p.id)) {
       const pr = this.props[i];
       if (pr.houses === 5) this.bankHotels++; else this.bankHouses += pr.houses;
@@ -1128,14 +1362,16 @@ class Game {
     p.cash = 0; p.bankrupt = true; p.inJail = false;
     if (this.auction) {
       this.auction.active = this.auction.active.filter((x) => x !== p.id);
+      if (this.auction.bids) delete this.auction.bids[p.id];
       if (this.auction.highBidder === p.id) { this.auction.highBidder = null; this.auction.highBid = 0; }
     }
     const alive = this.active();
     if (alive.length <= 1) { this.finish(alive[0] || null); return; }
-    if (this.current().id === p.id) {
-      this.auction = null;
+    if (this.current().id === p.id && !(this.auction && this.auction.draft)) {
+      if (this.auction && this.auction.kind === 'lot') this.auction = null;
       this.advanceTurn();
     } else if (this.auction) this.checkAuctionEnd();
+    this.startQueuedSale();
   }
 
   finish(winner) {
@@ -1160,6 +1396,7 @@ class Game {
     if (a === 'start') return this.start(pid);
     if (a === 'addBot') { if (this.status !== 'lobby') fail('Bots join in the lobby'); this.addBot(pid); return; }
     if (a === 'removeBot') { if (this.status !== 'lobby') fail('Bots leave in the lobby'); return this.removeBot(pid, msg.target); }
+    if (a === 'botSpeed') return this.setBotSpeed(pid, msg);
     if (a === 'chat') { const text = String(msg.text || '').slice(0, 200).trim(); if (text) this.addLog(`${p.name}: ${text}`, 'chat'); return; }
     this.requirePlaying();
     if (a !== 'kick' && a !== 'endNow') this.requireAlive(p);
@@ -1169,6 +1406,7 @@ class Game {
       case 'decline': return this.decline(p);
       case 'bid': return this.bid(p, msg.amount);
       case 'passAuction': return this.passAuction(p);
+      case 'liquidate': return this.liquidate(p, msg.space);
       case 'payBail': return this.payBail(p);
       case 'useJailCard': return this.useJailCard(p);
       case 'endTurn': return this.endTurn(p);
@@ -1208,6 +1446,16 @@ class Game {
   }
 
   // ---------------------------------------------------------------- client view
+  // Sealed bids are private: the shared view only says who has bid. `forPlayer` adds that player's own bid.
+  auctionView(forPlayer) {
+    const a = this.auction;
+    if (!a || !a.sealed) return a;
+    const { bids, ...rest } = a;
+    const v = { ...rest, submitted: Object.keys(bids) };
+    if (forPlayer && bids[forPlayer] !== undefined) v.myBid = bids[forPlayer];
+    return v;
+  }
+
   serialize() {
     const playing = this.status !== 'lobby';
     const players = this.players.map((p) => {
@@ -1241,7 +1489,9 @@ class Game {
       return info;
     });
     return {
-      ...view, round: this.round, turn: this.turn, auction: this.auction, lastRoll: this.lastRoll, lastCard: this.lastCard,
+      ...view, round: this.round, turn: this.turn, auction: this.auctionView(), lastRoll: this.lastRoll, lastCard: this.lastCard,
+      draftLeft: this.draftQueue ? this.draftQueue.length : 0,
+      salesQueued: this.saleQueue ? this.saleQueue.length : 0,
       spaceInfo, bankHouses: this.bankHouses, bankHotels: this.bankHotels,
       econ: {
         ...this.econ, salary: this.salary(), bail: this.bail(),
@@ -1260,4 +1510,4 @@ class Game {
 require('./desk')(Game, { fail, toInt, toNum, clamp, round2 });
 require('./market')(Game, { fail, toInt, toNum, clamp, round2 });
 
-module.exports = { Game, GameError, DEFAULT_SETTINGS, LOAN_TERMS, CLAUSE_KINDS };
+module.exports = { Game, GameError, DEFAULT_SETTINGS, PRESETS, LOAN_TERMS, CLAUSE_KINDS, BOT_DELAY_MIN, BOT_DELAY_MAX };

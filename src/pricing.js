@@ -114,5 +114,20 @@
     return p;
   }
 
-  return { DESK, normCdf, blackScholes, fairOption, optionAsk, optionBid, shareAskCost, shareBidProceeds, issueProceeds, cdsPremium, turnLanding };
+  // The desk deals at the WORSE of the round's mark and the live price for the customer.
+  // Neither stale news (live moved, mark hasn't) nor an intra-round pump (live pushed, then reversed) pays.
+  //   'ask': the higher price, used when the customer pays for upside (buying shares or a call, covering a short, closing a put)
+  //   'bid': the lower price, used when the customer is paid for upside (selling or shorting shares, closing a call, buying a put)
+  const dealPrice = (mark, live, side) => (side === 'ask' ? Math.max(mark, live) : Math.min(mark, live));
+  const TERM_PREMIUM = { 5: 0.25, 10: 0.5, 20: 1.0 };
+
+  // Older names, kept so existing callers (e.g. sim/) still work.
+  const optionPremium = optionAsk;
+  const shareAsk = (price, shares) => Math.ceil(price * shares * (1 + DESK.shareSpread));
+  const shareBid = (price, shares) => Math.floor(price * shares * (1 - DESK.shareSpread));
+
+  return {
+    DESK, normCdf, blackScholes, fairOption, optionAsk, optionBid, shareAskCost, shareBidProceeds, issueProceeds,
+    cdsPremium, turnLanding, dealPrice, TERM_PREMIUM, optionPremium, shareAsk, shareBid,
+  };
 }));

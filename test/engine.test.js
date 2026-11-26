@@ -217,7 +217,7 @@ test('fuzz: random full games never throw unexpected errors', () => {
       const other = pick(g.active().filter((p) => p.id !== any.id)) || any;
       if (r < 0.08) tryA(any.id, { action: 'borrow', amount: Math.floor(rng() * 800) + 10, term: pick([5, 10, 20]) });
       else if (r < 0.12 && any.loans[0]) tryA(any.id, { action: 'repay', loanId: any.loans[0].id, amount: 100 });
-      else if (r < 0.2 && mine.length) tryA(any.id, { action: pick(['build', 'sell', 'mortgage', 'unmortgage']), space: pick(mine) });
+      else if (r < 0.2 && mine.length) tryA(any.id, { action: pick(['build', 'sell', 'mortgage', 'unmortgage', 'liquidate']), space: pick(mine) });
       else if (r < 0.23 && mine.length) tryA(any.id, { action: 'proposeTrade', trade: { to: other.id, give: { spaces: [pick(mine)] }, get: { cash: 100 } } });
       else if (r < 0.27) {
         const kinds = [
@@ -267,7 +267,7 @@ test('fuzz: random full games never throw unexpected errors', () => {
       } else if (p.cash < 0) {
         // raise money or go bust
         const own = g.ownedBy(p.id);
-        if (own.length && rng() < 0.8) tryA(p.id, { action: rng() < 0.5 ? 'sell' : 'mortgage', space: pick(own) });
+        if (own.length && rng() < 0.8) tryA(p.id, { action: pick(['sell', 'mortgage', 'liquidate']), space: pick(own) });
         else tryA(p.id, { action: 'bankrupt' });
       } else if (g.turn.phase === 'roll') {
         if (p.inJail && rng() < 0.3) tryA(p.id, { action: 'payBail' });
@@ -281,6 +281,10 @@ test('fuzz: random full games never throw unexpected errors', () => {
         if (q.bankrupt) assert.strictEqual(g.ownedBy(q.id).length, 0);
       }
       assert.ok(g.bankHouses >= 0 && g.bankHouses <= 32, `houses ${g.bankHouses}`);
+      for (const k of Object.keys(g.props)) {
+        const pr = g.props[k];
+        if (pr.houses > 0) assert.ok(pr.estate || (pr.owner && g.ownsGroup(pr.owner, require('../src/board').SPACES[k].group)), `buildings on a split group at ${k}`);
+      }
       assert.ok(g.bankHotels >= 0 && g.bankHotels <= 12);
       JSON.stringify(g.serialize());
     }

@@ -196,7 +196,7 @@ function terminalHTML() {
   h += '<div class="tm-panel tm-main">';
   if (sel.kind === 'eq') {
     const r = pl(sel.ref); const m = desk.marks[r.id]; const eq = desk.equity[r.id]; const hz = desk.hazards[r.id];
-    const ask1 = P.shareAskCost(m.price, 1, eq.inv, eq.outside); const bid1 = P.shareBidProceeds(m.price, 1, eq.inv, eq.outside, hz);
+    const ask1 = P.shareAskCost(dealPx(r.id, 'ask'), 1, eq.inv, eq.outside); const bid1 = P.shareBidProceeds(dealPx(r.id, 'bid'), 1, eq.inv, eq.outside, m.hazard || 0);
     h += `<div class="tm-big"><span class="tm-sym">${tk(r.id)}</span><span class="tm-name">${r.token} ${esc(r.name)}</span><span class="tm-px">$${m.price.toFixed(2)}</span>${arrow(chg(m))}</div>
       <div class="tm-stats">
         <div><span>BID/ASK</span>$${bid1.toFixed(2)} / $${ask1.toFixed(2)}</div><div><span>VOL/RD</span>${(m.vol * 100).toFixed(0)}%</div><div><span>DEFAULT RISK</span>${(hz * 100).toFixed(1)}%</div>

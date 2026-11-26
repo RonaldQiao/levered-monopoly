@@ -29,6 +29,7 @@ function casual(g, pid) {
   }
   if (!myTurn) return null;
   const ph = g.turn.phase;
+  if (ph === 'roll' && g.auction) return null;
   if (ph === 'buy') return me.cash >= g.price(g.turn.pendingBuy) ? { action: 'buy' } : { action: 'decline' };
   if (ph === 'roll' || ph === 'done') {
     if (me.cash > 350) {
@@ -210,7 +211,7 @@ test('the bank refuses trades it cannot price or that invite abuse', () => {
   // No new protection, options or equity once a player is close to default.
   b.cash = -50; // negative cash pushes default risk above every limit
   assert.ok(g.hazard(b.id) > 0.12);
-  assert.throws(() => g.deskBuy(g.players[2], { product: 'cds', ref: b.id, notional: 100, term: 5 }), /not selling protection/);
+  assert.throws(() => g.deskBuy(g.players[2], { product: 'cds', ref: b.id, notional: 100, term: 5 }), /not selling protection|distress/);
   assert.throws(() => g.deskBuy(b, { product: 'issue', shares: 5 }), /default risk|no equity/);
   // The option book on one name is capped.
   const c = g.players[2]; c.cash = 20000;

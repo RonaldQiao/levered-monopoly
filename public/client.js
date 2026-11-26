@@ -101,7 +101,7 @@ function render() {
   if (!s) return;
   if (s.status === 'lobby') { showScreen('lobby'); renderLobby(); return; }
   showScreen('game');
-  $('#roomTag').textContent = `room ${s.code} · round ${s.round}`;
+  $('#roomTag').textContent = `room ${s.code} · round ${s.round}${s.settings.maxRounds ? ` of ${s.settings.maxRounds}` : ''}${s.settings.diceMode === 'seeded' ? ` · seed ${s.settings.seed}` : ''}`;
   renderBoard();
   renderTabs();
   renderTab();
@@ -113,6 +113,23 @@ function render() {
   }
 }
 
+// ------------------------------------------------------------------ AI speed (host control, any time)
+const AI_SPEEDS = [[500, 'Very fast (0.5s)'], [1000, 'Fast (1s)'], [1500, 'Normal (1.5s)'], [2500, 'Relaxed (2.5s)'], [4000, 'Slow (4s)'], [6000, 'Very slow (6s)'], [10000, 'Crawl (10s)']];
+function aiSpeedHTML(id = 'aiSpeed') {
+  const s = st(); const me = meP();
+  if (!s.players.some((p) => p.bot)) return '';
+  const d = s.settings.botDelay || 1500; const paused = !!s.settings.botsPaused;
+  const opts = AI_SPEEDS.some(([v]) => v === d) ? AI_SPEEDS : [...AI_SPEEDS, [d, `${(d / 1000).toFixed(1)}s`]].sort((x, y) => x[0] - y[0]);
+  if (!me || !me.host) {
+    return `<div class="ai-speed"><span class="muted">🤖 AI speed: <b>${paused ? 'paused' : `${(d / 1000).toFixed(1)}s per move`}</b> (set by the host)</div>`;
+  }
+  return `<div class="ai-speed">
+    <label for="${id}">🤖 AI speed</label>
+    <select id="${id}" class="ai-speed-select" title="Time between AI moves">${opts.map(([v, l]) => `<option value="${v}" ${v === d ? 'selected' : ''}>${l}</option>`).join('')}</select>
+    <button class="small ${paused ? 'primary' : ''}" data-aipause="${paused ? '0' : '1'}" title="${paused ? 'Let the AI players move again' : 'AI players stop taking turns (they still answer auctions and offers)'}">${paused ? '▶ Resume AI' : '⏸ Pause AI'}</button>
+  </div>`;
+}
+
 // ------------------------------------------------------------------ lobby
 function renderLobby() {
   const s = st(); const me = meP();
@@ -122,14 +139,38 @@ function renderLobby() {
   $('#lobbyPlayers').innerHTML = s.players.map((p) => `<li style="border-color:${p.color}"><span style="font-size:20px">${p.token}</span><span>${esc(p.name)}</span>${p.bot ? '<span class="badge">AI</span>' : ''}${p.host ? '<span class="badge">host</span>' : ''}${p.connected ? '' : '<span class="badge warn">offline</span>'}${p.id === S.me ? '<span class="badge good">you</span>' : ''}${p.bot && host ? `<button class="small link" data-act="removeBot" data-target="${p.id}" title="Remove this AI player">remove</button>` : ''}</li>`).join('')
     + (host && s.players.length < 8 ? '<li class="add-bot"><button data-act="addBot">+ Add AI player</button></li>' : '');
   const dis = host ? '' : 'disabled';
+  const sel = (id, v, opts) => `<select id="${id}" ${dis}>${opts.map(([k, l]) => `<option value="${k}" ${String(k) === String(v) ? 'selected' : ''}>${l}</option>`).join('')}</select>`;
+  const onOff = (id, v, on = 'On', off = 'Off') => sel(id, v ? '1' : '0', [['1', on], ['0', off]]);
+  const isSkill = set.acquisition === 'draft' && set.auctionFormat === 'sealed' && set.diceMode === 'seeded' && !set.moneyCards && !set.jail && !set.doubles && set.creditModel === 'riskPriced';
+  $('#lobbyPresets').innerHTML = `<span class="muted">Rules preset:</span>
+    <button class="small ${isSkill ? '' : 'primary'}" data-preset="classic" ${dis}>Classic</button>
+    <button class="small ${isSkill ? 'primary' : ''}" data-preset="skill" ${dis} title="Draft + sealed bids, duplicate dice, no money cards / jail / doubles, costly risk-priced credit, 40 rounds">Skill test</button>
+    <span class="muted" style="font-size:12px">${isSkill ? 'Skill test: faster, less luck — trading decisions decide the game. Replay the same seed with seats rotated for a duplicate match.' : 'Classic: the traditional game plus the central bank.'}</span>${aiSpeedHTML('aiSpeedLobby')}`;
   $('#lobbySettings').innerHTML = (`
     <label>Starting cash<input id="setCash" type="number" min="500" max="5000" step="100" value="${set.startingCash}" ${dis}></label>
     <label>PAYDAY salary<input id="setSalary" type="number" min="50" max="1000" step="10" value="${set.salary}" ${dis}></label>
     <label>Max leverage (assets ÷ equity)
       <select id="setLev" ${dis}>${[1, 1.5, 2, 3, 4, 5, 8].map((x) => `<option value="${x}" ${x === set.maxLeverage ? 'selected' : ''}>${x === 1 ? '1× — no bank borrowing' : `${x}×`}</option>`).join('')}</select></label>
-    <label>Auctions on declined property<select id="setAuc" ${dis}><option value="1" ${set.auctions ? 'selected' : ''}>On (traditional)</option><option value="0" ${set.auctions ? '' : 'selected'}>Off</option></select></label>`);
+    <label>Getting property${sel('setAcq', set.acquisition, [['land', 'Buy what you land on'], ['draft', 'Opening draft (all lots auctioned)']])}</label>
+    <label>Auctions on declined property${onOff('setAuc', set.auctions, 'On (traditional)')}</label>
+    <label>Auction format${sel('setAucFmt', set.auctionFormat, [['english', 'Open outcry (English)'], ['sealed', 'Sealed bid, second price']])}</label>
+    <label>Dice${sel('setDice', set.diceMode, [['random', 'Random'], ['seeded', 'Seeded per seat (duplicate)']])}</label>
+    ${set.diceMode === 'seeded' ? `<label>Seed (blank = random)<input id="setSeed" type="number" min="0" step="1" value="${set.seed ?? ''}" ${dis}></label>` : ''}
+    <label>Money cards${onOff('setCards', set.moneyCards, 'On', 'Off (macro shocks only)')}</label>
+    <label>Lockup (jail)${onOff('setJail', set.jail)}</label>
+    <label>Doubles roll again${onOff('setDoubles', set.doubles)}</label>
+    <label>Credit pricing${sel('setCredit', set.creditModel, [['classic', 'Classic (0.5%/unit leverage)'], ['riskPriced', 'Risk-priced (1.5%/unit, re-priced each round)']])}</label>
+    <label>Neutral real rate %/round<input id="setNeutral" type="number" min="0" max="12" step="0.5" value="${set.neutralRate}" ${dis}></label>
+    <label>Game length<input id="setRounds" type="number" min="0" max="500" step="5" value="${set.maxRounds}" ${dis} title="0 = play until one player is left"></label>
+    <label>Distressed property${sel('setLiq', set.liquidation, [['auction', 'Auction to players (sealed bid)'], ['bank', 'Sell to the bank only']])}</label>`);
   for (const inp of $$('#lobbySettings input, #lobbySettings select')) {
-    inp.onchange = () => act('settings', { settings: { startingCash: $('#setCash').value, salary: $('#setSalary').value, maxLeverage: $('#setLev').value, auctions: $('#setAuc').value === '1' } });
+    inp.onchange = () => act('settings', { settings: {
+      startingCash: $('#setCash').value, salary: $('#setSalary').value, maxLeverage: $('#setLev').value, auctions: $('#setAuc').value === '1',
+      acquisition: $('#setAcq').value, auctionFormat: $('#setAucFmt').value, diceMode: $('#setDice').value,
+      ...($('#setSeed') ? { seed: $('#setSeed').value } : {}),
+      moneyCards: $('#setCards').value === '1', jail: $('#setJail').value === '1', doubles: $('#setDoubles').value === '1',
+      creditModel: $('#setCredit').value, neutralRate: $('#setNeutral').value, maxRounds: $('#setRounds').value, liquidation: $('#setLiq').value,
+    } });
   }
   $('#startBtn').disabled = !host || s.players.length < 2;
   $('#startBtn').textContent = host ? (s.players.length < 2 ? 'Need 2+ players' : 'Start game') : 'Waiting for host…';
@@ -337,14 +378,39 @@ function phaseLabel(ph, p) {
   if (ph === 'roll') return p.inJail ? 'in Lockup — roll for doubles, pay bail or use a card' : 'ready to roll';
   if (ph === 'buy') return `deciding whether to buy ${esc(space(st().turn.pendingBuy).name)}`;
   if (ph === 'auction') return 'auction in progress';
+  if (ph === 'draft') return 'opening draft in progress';
   if (ph === 'done') return 'managing / about to end turn';
   return ph;
+}
+
+function sealedAuctionHTML(a, me, left) {
+  const s = st(); const inIt = a.active.includes(S.me);
+  const total = s.spaceInfo.filter(Boolean).filter((x) => x.price !== undefined).length;
+  const lots = a.lots || [a.space];
+  const names = lots.map((i) => { const h = s.spaceInfo[i].houses; return `${esc(space(i).name)}${h === 5 ? ' (hotel)' : h ? ` (${h} house${h > 1 ? 's' : ''})` : ''}${s.spaceInfo[i].mortgaged ? ' (mortgaged)' : ''}`; }).join(' + ');
+  const list = lots.reduce((x, i) => x + s.spaceInfo[i].price, 0);
+  const title = a.kind === 'draft' ? `📋 Draft lot ${total - s.draftLeft}/${total}: ${names}`
+    : a.kind === 'liquidation' ? `🔨 Distressed sale by ${pname(a.seller)}: ${names}`
+      : a.kind === 'estate' ? `🏛 Estate sale (${esc(a.from)}): ${names}` : `🔨 Sealed-bid auction: ${names}`;
+  const sub = a.kind === 'liquidation' ? `Reserve ${plain$(a.reserve)} (what the bank would pay). Proceeds go to the seller.`
+    : a.kind === 'estate' ? `From a bankrupt player; proceeds go to the bank.${s.salesQueued ? ` ${s.salesQueued} more lot(s) to follow.` : ''}` : '';
+  return `<div class="auction-box">
+    <div><b>${title}</b> <span class="muted">(list ${plain$(list)})</span> <button class="link" data-deed="${a.space}">deed</button></div>
+    <div class="muted" style="margin:4px 0">Highest bid wins and pays the <b>second-highest</b> bid, so bid what it is worth to you. Bids stay secret until the lot closes. ${sub}</div>
+    <div class="muted">closes in <b id="auctionTimer">${left}</b>s · bid: ${a.submitted.map((id) => pl(id).token).join(' ') || '—'} · waiting: ${a.active.map((id) => pl(id).token).join(' ') || '—'}</div>
+    ${inIt && me && !me.bankrupt ? `<div class="row" style="margin-top:8px">
+      <input id="bidAmt" type="number" min="${a.reserve || 1}" max="${me.cash}" placeholder="your max" style="width:110px">
+      <button class="primary" data-act="bid">Submit sealed bid</button>
+      <button class="danger" data-act="passAuction">Pass</button>
+    </div>` : `<div class="muted" style="margin-top:6px">${a.seller === S.me ? 'This is your sale — you cannot bid on it.' : a.myBid !== undefined ? `Your sealed bid: <b>${plain$(a.myBid)}</b>` : 'You passed on this lot.'}</div>`}
+  </div>`;
 }
 
 function auctionHTML() {
   const a = st().auction; const me = meP();
   const inIt = a.active.includes(S.me);
   const left = Math.max(0, Math.ceil((a.deadline - (Date.now() + S.clockSkew)) / 1000));
+  if (a.sealed) return sealedAuctionHTML(a, me, left);
   return `<div class="auction-box">
     <div><b>🔨 Auction: ${esc(space(a.space).name)}</b> <span class="muted">(list ${plain$(st().spaceInfo[a.space].price)})</span></div>
     <div style="font-size:20px;margin:6px 0">${a.highBidder ? `${plain$(a.highBid)} — ${pname(a.highBidder)}` : 'No bids yet'}</div>
@@ -369,7 +435,7 @@ function actionButtons() {
         b += `<button class="primary big" data-act="roll">🎲 Roll for doubles (try ${me.jailTurns + 1}/3)</button>`;
         b += `<button data-act="payBail" ${me.cash < s.econ.bail ? 'disabled' : ''}>Pay ${plain$(s.econ.bail)} bail</button>`;
         if (me.jailCards) b += '<button data-act="useJailCard">Use get-out card</button>';
-      } else b += `<button class="primary big" data-act="roll">🎲 Roll dice${s.turn.doubles ? ' again' : ''}</button>`;
+      } else b += `<button class="primary big" data-act="roll" ${s.auction ? 'disabled title="Wait for the auction to close"' : ''}>🎲 Roll dice${s.turn.doubles ? ' again' : ''}</button>`;
     } else if (ph === 'buy') {
       const i = s.turn.pendingBuy; const price = s.spaceInfo[i].price;
       b += `<button class="primary big" data-act="buy" ${me.cash < price ? 'disabled' : ''}>Buy ${esc(space(i).name)} for ${plain$(price)}</button>`;
@@ -378,7 +444,11 @@ function actionButtons() {
       if (me.cash < price) b += `<div class="muted" style="width:100%;text-align:center">Short ${plain$(price - me.cash)}? <button class="link" data-tab-go="bank">Borrow from the central bank</button> or mortgage something.</div>`;
     } else if (ph === 'done') {
       b += `<button class="primary big" data-act="endTurn">End turn ➜</button>`;
+    } else if (ph === 'draft') {
+      b += '<span class="muted">Opening draft — bid on each lot above. Rolling starts when the draft ends.</span>';
     }
+  } else if (s.turn.phase === 'draft') {
+    b += '<span class="muted">Opening draft — bid on each lot above. You can borrow before you bid.</span>';
   } else {
     b += `<span class="muted">Waiting for ${esc(s.players[s.turn.idx].name)}… you can still trade, borrow, build and write contracts.</span>`;
   }
@@ -442,7 +512,7 @@ function renderTab() {
 function tabPlayers() {
   const s = st(); const me = meP();
   let h = '';
-  if (me && me.host && s.status === 'playing') h += `<div class="row" style="justify-content:flex-end;margin-bottom:8px"><button class="small" data-act="endNow" data-confirm="End the game now? Highest net worth wins.">End game now (net worth wins)</button></div>`;
+  if (s.status === 'playing') h += `<div class="row" style="justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:8px">${aiSpeedHTML()}${me && me.host ? '<button class="small" data-act="endNow" data-confirm="End the game now? Highest net worth wins.">End game now (net worth wins)</button>' : ''}</div>`;
   for (const p of s.players) {
     const turn = s.status === 'playing' && s.players[s.turn.idx].id === p.id;
     const props = ownedBy(p.id);
@@ -479,6 +549,8 @@ function tabAssets() {
   const byGroup = {};
   for (const i of mine) { const k = space(i).type === 'street' ? space(i).group : space(i).type; (byGroup[k] ||= []).push(i); }
   let h = '';
+  const canLiq = s.settings.liquidation === 'auction' && (me.cash < 0 || me.marginCall) && !s.auction;
+  if (canLiq) h += '<p class="muted" style="font-size:12.5px">You are underwater. Besides selling to the bank, you can <b>auction</b> property to the other players: a sealed-bid sale with the bank\'s price as the reserve. A lot in a built colour group sells as the whole group with its buildings.</p>';
   for (const [k, list] of Object.entries(byGroup)) {
     const g = S.board.groups[k];
     const full = g && S.board.spaces.filter((x) => x.group === k).every((x) => s.spaceInfo[x.index].owner === S.me);
@@ -490,6 +562,10 @@ function tabAssets() {
       if (info.houses > 0) acts.push(`<button class="small" data-act="sell" data-space="${i}">sell bldg +${plain$(info.houseCost / 2)}</button>`);
       if (!info.mortgaged && info.houses === 0) acts.push(`<button class="small" data-act="mortgage" data-space="${i}">mortgage +${plain$(info.mortgageValue)}</button>`);
       if (info.mortgaged) acts.push(`<button class="small" data-act="unmortgage" data-space="${i}">lift −${plain$(info.unmortgageCost)}</button>`);
+      if (canLiq && !info.encumbered) {
+        const built = sp.type === 'street' && S.board.spaces.some((x) => x.group === sp.group && s.spaceInfo[x.index].houses > 0);
+        acts.push(`<button class="small" data-act="liquidate" data-space="${i}" data-confirm="${built ? 'Auction the whole colour group with its buildings?' : `Auction ${esc(sp.name)}?`} The bank's price is the reserve.">auction${built ? ' set' : ''}</button>`);
+      }
       const bld = info.houses === 5 ? '<span class="mini-hotel" title="hotel"></span>' : '<span class="mini-house"></span>'.repeat(info.houses);
       h += `<div class="prop-row"><div class="sw" style="background:${propColor(i)}"></div>
         <div><a href="#" data-deed="${i}">${esc(sp.name)}</a> ${bld} ${info.mortgaged ? '<span class="badge warn">mortgaged</span>' : ''} ${info.encumbered ? '<span class="badge">pledged</span>' : ''}
@@ -546,6 +622,8 @@ const DESK_PRODUCTS = {
 };
 S.dk = { product: 'shares', ref: null, shares: 10, strike: '', term: 10, notional: 500, deductible: 250, side: 'payFixed' };
 
+// The desk deals at the worse of the round mark and the live price (same rule as the server).
+const dealPx = (pid, side) => { const d = st().desk; const m = d.marks[pid]; return m ? Math.round(window.Pricing.dealPrice(m.price, d.live[pid] ?? m.price, side) * 100) / 100 : 0; };
 function deskQuote() {
   const s = st(); const d = S.dk; const P = window.Pricing; const desk = s.desk;
   const mark = d.ref && desk.marks[d.ref];
@@ -555,15 +633,16 @@ function deskQuote() {
       if (!mark) return '';
       const e = desk.equity[d.ref];
       if (n > e.inv) return `Only ${e.inv} of ${pl(d.ref).name}'s shares are available from the bank. More exist only if ${esc(pl(d.ref).name)} issues them.`;
-      const cost = P.shareAskCost(mark.price, n, e.inv, e.outside);
-      return `Cost ${plain$(cost)} for ${n} shares (mark $${mark.price.toFixed(2)}; avg $${(cost / Math.max(1, n)).toFixed(2)} incl. spread and scarcity) · ${e.inv - n} left in the float afterwards`;
+      const px = dealPx(d.ref, 'ask');
+      const cost = P.shareAskCost(px, n, e.inv, e.outside);
+      return `Cost ${plain$(cost)} for ${n} shares (dealt at ${px.toFixed(2)}, the higher of mark and live; avg $${(cost / Math.max(1, n)).toFixed(2)} incl. spread and scarcity) · ${e.inv - n} left in the float afterwards`;
     }
     case 'short': {
       if (!mark) return '';
       const e = desk.equity[d.ref]; const left = e.float - e.shortInterest;
       if (n > left) return `Only ${left} ${esc(pl(d.ref).name)} shares are left to borrow.`;
-      const proceeds = P.shareBidProceeds(mark.price, n, e.inv, e.outside, mark.hazard || 0);
-      const cover = P.shareAskCost(mark.price, n, e.inv, e.outside);
+      const proceeds = P.shareBidProceeds(dealPx(d.ref, 'bid'), n, e.inv, e.outside, mark.hazard || 0);
+      const cover = P.shareAskCost(dealPx(d.ref, 'ask'), n, e.inv, e.outside);
       const fee = Math.max(1, Math.round(n * mark.price * (P.DESK.shortFeeBase + P.DESK.shortFeeHazard * (mark.hazard || 0))));
       return `You receive ${plain$(proceeds)} now · covering today would cost ${plain$(cover)} · borrow fee about ${plain$(fee)} a round · ${left - n} left to borrow`;
     }
@@ -574,11 +653,12 @@ function deskQuote() {
     }
     case 'call': case 'put': {
       if (!mark) return '';
+      const S0 = dealPx(d.ref, d.product === 'call' ? 'ask' : 'bid');
       const K = Number(d.strike || mark.price.toFixed(2));
       const T = Number(d.term);
-      const ask = P.optionAsk(d.product, mark.price, K, T, s.econ.policyRate, mark.vol, n);
-      const fair = P.fairOption(d.product, mark.price, K, T, s.econ.policyRate, mark.vol, n);
-      const bid = P.optionBid(d.product, mark.price, K, T, s.econ.policyRate, mark.vol, n);
+      const ask = P.optionAsk(d.product, S0, K, T, s.econ.policyRate, mark.vol, n);
+      const fair = P.fairOption(d.product, S0, K, T, s.econ.policyRate, mark.vol, n);
+      const bid = P.optionBid(d.product, dealPx(d.ref, d.product === 'call' ? 'bid' : 'ask'), K, T, s.econ.policyRate, mark.vol, n);
       const be = d.product === 'call' ? K + ask / Math.max(1, n) : K - ask / Math.max(1, n);
       return `Premium ${plain$(ask)} (fair ${plain$(fair)}, bank buys back today at ${plain$(bid)}) · vol ${(mark.vol * 100).toFixed(0)}%/round · breakeven $${be.toFixed(2)}/share`;
     }
@@ -598,8 +678,8 @@ function deskQuote() {
 
 function positionQuote(x) {
   const s = st(); const P = window.Pricing; const desk = s.desk; const m = x.ref && desk.marks[x.ref];
-  if (x.type === 'shares') { const e = desk.equity[x.ref]; return P.shareBidProceeds(m.price, x.shares, e.inv, e.outside, desk.hazards[x.ref]); }
-  if (x.type === 'call' || x.type === 'put') return P.optionBid(x.type, m.price, x.strike, Math.max(0, x.expiry - s.round), s.econ.policyRate, m.vol, x.shares);
+  if (x.type === 'shares') { const e = desk.equity[x.ref]; return P.shareBidProceeds(dealPx(x.ref, 'bid'), x.shares, e.inv, e.outside, m.hazard || 0); }
+  if (x.type === 'call' || x.type === 'put') return P.optionBid(x.type, dealPx(x.ref, x.type === 'call' ? 'bid' : 'ask'), x.strike, Math.max(0, x.expiry - s.round), s.econ.policyRate, m.vol, x.shares);
   return 0;
 }
 
@@ -610,10 +690,10 @@ function tabDesk() {
   if (!S.dk.ref || !rivals.some((p) => p.id === S.dk.ref)) S.dk.ref = rivals[0]?.id || null;
   const d = S.dk;
   const myEq = desk.equity[S.me];
-  let h = `<div class="row" style="margin-bottom:8px"><button class="primary" data-open-terminal>📈 Open market terminal</button></div><p class="muted" style="font-size:12.5px;margin-top:0">The central bank makes the market. It values each player at book equity plus about 8 rounds of expected rent, less a discount for default risk, re-marks once a round, and quotes around that with a spread. Every player has <b>100 shares of their own plus ${myEq.float} in a float</b> the bank holds; once the float is bought up, more shares exist only if that player issues them.</p>`;
-  h += `<div class="box"><h4>Equity board</h4><table class="t"><tr><th>Player</th><th class="n">Price</th><th class="n">Δ round</th><th class="n">Float left</th><th class="n">Vol</th><th class="n">Default risk</th></tr>
+  let h = `<div class="row" style="margin-bottom:8px"><button class="primary" data-open-terminal>📈 Open market terminal</button></div><p class="muted" style="font-size:12.5px;margin-top:0">The central bank makes the market. It values each player at book equity plus about 8 rounds of expected rent, less a discount for default risk, re-marks once a round, and quotes around that with a spread. It deals at the <b>worse of the round's mark and the live price</b> for you, so stale quotes and intra-round pumps don't pay. Every player has <b>100 shares of their own plus ${myEq.float} in a float</b> the bank holds; once the float is bought up, more shares exist only if that player issues them.</p>`;
+  h += `<div class="box"><h4>Equity board</h4><table class="t"><tr><th>Player</th><th class="n">Mark</th><th class="n">Live</th><th class="n">Δ round</th><th class="n">Float left</th><th class="n">Vol</th><th class="n">Default risk</th></tr>
     ${s.players.map((p) => { const m = desk.marks[p.id]; const e = desk.equity[p.id]; if (!m) return ''; const prev = m.history.length > 1 ? m.history[m.history.length - 2] : m.price; const ch = prev ? (m.price / prev - 1) * 100 : 0;
-      return `<tr class="${p.bankrupt ? 'dead' : ''}"><td>${p.token} ${esc(p.name)}</td><td class="n">$${m.price.toFixed(2)}</td><td class="n ${ch > 0 ? 'pos' : ch < 0 ? 'neg' : ''}">${ch >= 0 ? '+' : ''}${ch.toFixed(1)}%</td><td class="n">${e.inv}/${e.outside}</td><td class="n">${(m.vol * 100).toFixed(0)}%</td><td class="n">${p.bankrupt ? 'defaulted' : pct((desk.hazards[p.id] || 0) * 100, 1)}</td></tr>`; }).join('')}</table>
+      return `<tr class="${p.bankrupt ? 'dead' : ''}"><td>${p.token} ${esc(p.name)}</td><td class="n">${m.price.toFixed(2)}</td><td class="n">${(desk.live[p.id] ?? m.price).toFixed(2)}</td><td class="n ${ch > 0 ? 'pos' : ch < 0 ? 'neg' : ''}">${ch >= 0 ? '+' : ''}${ch.toFixed(1)}%</td><td class="n">${e.inv}/${e.outside}</td><td class="n">${(m.vol * 100).toFixed(0)}%</td><td class="n">${p.bankrupt ? 'defaulted' : pct((desk.hazards[p.id] || 0) * 100, 1)}</td></tr>`; }).join('')}</table>
     <p class="muted" style="font-size:12px;margin:6px 0 0">You own ${myEq.insider} of your ${myEq.outstanding} shares (${((100 * myEq.insider) / myEq.outstanding).toFixed(1)}%); net worth counts only your share of your own equity.</p></div>`;
   const needsRef = ['shares', 'short', 'call', 'put', 'cds'].includes(d.product);
   const f = [];
@@ -630,10 +710,10 @@ function tabDesk() {
     short: 'Bet against a rival: borrow their shares from the bank and sell them now; buy them back later to close. You pay a borrow fee every round (higher for riskier players), the short counts as a liability in your equity — so a rising price can bring a margin call — and if they go bankrupt it closes for free. At most 25 shares per player, and only as many as the float allows.',
     issue: 'Raise cash by selling new shares of yourself to the bank. It is not debt, so it doesn\'t use up borrowing room, but you own a smaller slice of yourself. The bank pays below the mark, less for bigger issues, and nothing at all once your default risk passes 12% a round. Up to 25 shares a round.',
     call: 'Pays (price − strike) × shares. Priced with Black-Scholes using the player\'s share history plus the rent shocks the board implies. Sell it back to the bank any time at fair value less 10%.',
-    put: 'Pays (strike − price) × shares, and the full strike if the player goes bankrupt. Sell it back any time at fair value less 10%.',
-    cds: 'The bank pays the notional if that player goes bankrupt. The premium is fixed when you buy. The bank stops selling protection once default risk passes 20% a round, and caps total protection on one player at about 1.5× their equity.',
+    put: 'Pays (strike − price) × shares, and the full strike if the player goes bankrupt. Sell it back any time at fair value less 10%. Not sold on a player already below $0.',
+    cds: 'The bank pays the notional if that player goes bankrupt. The premium is fixed when you buy. Not sold on a player already below $0. The bank stops selling protection once default risk passes 20% a round, and caps total protection on one player at about 1.5× their equity.',
     insurance: 'Covers a ruinous rent bill. Re-priced every round from the square you stand on and the rents ahead, so it\'s cheap in quiet stretches and expensive in front of hotels.',
-    swap: 'Bet on (or hedge) the policy rate. The fixed rate comes from the bank\'s forecast of where rates are heading, not just today\'s rate. Settled every round; close early at mark-to-market − 1%.',
+    swap: 'Bet on (or hedge) the policy rate. The fixed rate is the bank\'s forecast of the average policy rate (no term premium, so neither side earns free carry) ± 0.1%. Settled every round; total swap notional is capped at your desk limit; close early at mark-to-market − 1%.',
   }[d.product];
   h += axesHTML() + playerMarketHTML();
   h += `<div class="box"><h4>New order</h4><div class="fields-grid">${f.join('')}</div>
@@ -1039,6 +1119,7 @@ const RULES_HTML = `<div class="rules"><h2>How to play Margin Call</h2>
 <li><b>Mortgage</b> unimproved property for half its value; lifting a mortgage costs +10%. Mortgaged property earns no rent.</li>
 <li><b>Lockup</b>: pay bail, use a get-out card, or roll doubles (max 3 tries, then pay and move).</li>
 <li>Draw <b>Market Event</b> and <b>Town Treasury</b> cards — some are macro shocks hitting the whole economy.</li>
+<li><b>Distressed sales</b> (lobby option, on by default): when you are below $0 or in a margin call you can auction property to the other players by sealed bid, with the bank's price as the reserve. A lot in a built colour group sells as the whole group with its buildings. A bankrupt player's estate is auctioned the same way, with the proceeds going to the bank.</li>
 <li>Trade property, cash and cards at any time. Can't pay? Raise cash or declare <b>bankruptcy</b>. Last player standing wins (or the host can end the game: highest net worth wins).</li>
 </ul>
 <h3>The central bank</h3>
@@ -1063,12 +1144,22 @@ const RULES_HTML = `<div class="rules"><h2>How to play Margin Call</h2>
 </ul>
 <h3>The bank desk</h3>
 <ul>
-<li>The central bank is a <b>market maker</b>: it values each player at book equity plus about 8 rounds of expected rent, less a discount for default risk, re-marks once a round, and quotes around that value with a spread.</li>
+<li>The central bank is a <b>market maker</b>: it values each player at book equity plus about 8 rounds of expected rent, less a discount for default risk, re-marks once a round, and quotes around that value with a spread, dealing at the worse of the round's mark and the live price for you.</li>
 <li><b>Shares</b>: each player owns 100 shares of themselves, plus 25 more in a float held by the bank. Others can buy from the float (the price rises as it runs out); after that, more shares exist only if the player <b>issues</b> them to raise cash. Net worth counts only your own share of your equity.</li>
 <li><b>Calls and puts</b> on rivals' shares: priced with Black-Scholes using share history plus the rent shocks the board implies; sold at fair value + 10% and bought back any time at fair value − 10%.</li>
 <li><b>Credit default swaps</b>, <b>rent insurance</b> (re-priced every round from where you stand) and <b>rate swaps</b>.</li>
-<li>The bank <b>refuses</b> trades it can't price or that invite abuse: no protection, options or new equity on players close to default, and caps on total protection and options per player.</li>
+<li>The bank <b>refuses</b> trades it can't price or that invite abuse: no protection or puts on a player below $0, no protection, options or new equity on players close to default, and caps on total protection and options per player.</li>
 <li>You can't trade instruments on yourself. Desk positions count toward net worth but not toward your borrowing limit.</li>
+</ul>
+<h3>Skill-test settings (lobby)</h3>
+<ul>
+<li><b>Opening draft</b>: every property is auctioned before round 1, so who owns what depends on valuation, not on where the dice land.</li>
+<li><b>Sealed bids, second price</b>: everyone bids once in secret; the highest bid wins and pays the second-highest bid. Bid what the lot is worth to you; reaction speed doesn't matter.</li>
+<li><b>Seeded dice</b>: each seat has its own dice and card stream from the seed. Replay the same seed with players rotated through the seats and everyone has faced the same luck (a duplicate match).</li>
+<li><b>Money cards / Lockup / doubles</b> can be switched off: they add noise but no decisions.</li>
+<li><b>Risk-priced credit</b>: the credit spread is 1.5% per unit of leverage and re-prices on all your bank debt every round. With a higher <b>neutral rate</b>, borrowing costs about what property earns, so sizing your leverage matters.</li>
+<li><b>Game length</b>: the game ends after that round and the highest net worth wins.</li>
+<li>The <b>Skill test</b> preset sets all of these (draft, sealed bids, seeded dice, no money cards/jail/doubles, risk-priced credit, neutral rate 8%, 40 rounds). The choices come from simulating hundreds of thousands of AI games (sim/REPORT.md).</li>
 </ul>
 <h3>AI players</h3>
 <ul><li>The host can add AI players in the lobby. They play by exactly the same rules, trade, bid, build, borrow and use the bank desk.</li></ul></div>`;
@@ -1084,6 +1175,8 @@ document.addEventListener('click', (ev) => {
   if (t.dataset.open === 'trade') return openTradeModal();
   if (t.dataset.open === 'contract') return openContractModal();
   if (t.dataset.deed !== undefined) { ev.preventDefault(); openDeed(Number(t.dataset.deed)); return; }
+  if (t.dataset.preset) { act('settings', { settings: { preset: t.dataset.preset } }); return; }
+  if (t.dataset.aipause) { act('botSpeed', { paused: t.dataset.aipause === '1' }); return; }
   if (t.dataset.bidplus) { const a = st().auction; const inp = $('#bidAmt'); const base = Math.max(a.highBid, Number(inp.value) || 0); inp.value = base + Number(t.dataset.bidplus); return; }
   if (t.dataset.bankmax !== undefined) { $('#bankAmt').value = meP().headroom; return; }
   if (t.dataset.chat !== undefined) { const i = $('#chatIn'); if (i.value.trim()) { act('chat', { text: i.value }); i.value = ''; } return; }
@@ -1133,6 +1226,7 @@ const onDeskField = (ev) => {
 };
 document.addEventListener('input', onDeskField);
 document.addEventListener('change', onDeskField);
+document.addEventListener('change', (ev) => { if (ev.target.classList.contains('ai-speed-select')) act('botSpeed', { delay: Number(ev.target.value) }); });
 
 document.addEventListener('keydown', (ev) => {
   if (ev.key === 'Escape') closeModal();
