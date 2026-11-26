@@ -277,6 +277,18 @@ h3 { margin: 18px 0 8px; font-family: var(--serif); font-size: 15px; font-weight
 .final { background: var(--paper); color: var(--ink); border-radius: 12px; padding: 16px 20px; width: 100%; box-shadow: 0 16px 40px #000c; }
 .final h2 { margin: 0 0 8px; text-align: center; }
 .final table.t td, .final table.t th { border-color: #d4c9a8; color: var(--ink); }
+.overlay:has(.payout-table) { width: min(640px, 96%); }
+.payout-head { margin: 12px 0 6px; font-size: 14px; }
+.final .payout-head { text-align: center; }
+.payout-wrap { overflow-x: auto; max-width: 100%; }
+.payout-table td, .payout-table th { white-space: nowrap; }
+.payout-table tr.total td { border-top: 2px solid var(--line); border-bottom: none; }
+.final .payout-table tr.total td { border-top-color: #b9ae8c; }
+.final .payout-table .pos { color: #1d7a45; }
+.final .payout-table .neg { color: #b3261e; }
+.lobby-payout { margin-top: 10px; }
+.payout-note { font-size: 12px; line-height: 1.5; margin: 8px 0 0; }
+.badge.stake { color: var(--gold); border-color: var(--gold); text-transform: none; }
 
 /* ------------------------------------------------------------------ sidebar content */
 .pcard { background: var(--panel2); border-radius: var(--radius); padding: 10px 12px; margin-bottom: 8px; border-left: 5px solid; }

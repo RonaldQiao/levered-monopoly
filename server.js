@@ -17,14 +17,16 @@ const PASSIVE = new Set(['bid', 'passAuction', 'acceptTrade', 'rejectTrade', 'ac
 const PORT = Number(process.env.PORT) || 3000;
 const HOST = process.env.HOST || '0.0.0.0';
 const PUBLIC = path.join(__dirname, 'public');
+const SHARED = new Set(['/pricing.js', '/payout.js']); // served from src/
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.ico': 'image/x-icon' };
 
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, 'http://x');
   let file = url.pathname === '/' ? '/index.html' : url.pathname;
-  // Shared bank-desk pricing (same code the server uses).
-  const full = file === '/pricing.js' ? path.join(__dirname, 'src', 'pricing.js') : path.normalize(path.join(PUBLIC, file));
-  if (file !== '/pricing.js' && !full.startsWith(PUBLIC)) { res.writeHead(403); return res.end(); }
+  // Shared modules (same code the server uses): bank-desk pricing and real-money payouts.
+  const shared = SHARED.has(file);
+  const full = shared ? path.join(__dirname, 'src', file.slice(1)) : path.normalize(path.join(PUBLIC, file));
+  if (!shared && !full.startsWith(PUBLIC)) { res.writeHead(403); return res.end(); }
   fs.readFile(full, (err, data) => {
     if (err) { res.writeHead(404); return res.end('Not found'); }
     res.writeHead(200, { 'Content-Type': MIME[path.extname(full)] || 'application/octet-stream', 'Cache-Control': 'no-cache' });

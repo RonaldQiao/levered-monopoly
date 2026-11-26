@@ -1,6 +1,7 @@
 'use strict';
 const { GROUPS, SPACES, OWNABLE, JAIL_INDEX, GROUP_MEMBERS, TRANSITS, UTILITIES } = require('./board');
 const { EVENT_CARDS, TREASURY_CARDS } = require('./cards');
+const Payout = require('./payout');
 
 class GameError extends Error {}
 const fail = (msg) => { throw new GameError(msg); };
@@ -43,6 +44,8 @@ const DEFAULT_SETTINGS = {
   liquidation: 'auction',  // 'auction': distressed property is sold to players by sealed bid | 'bank': bank only
   botDelay: 1500,          // ms between AI moves; the host can change it at any time, even mid-game
   botsPaused: false,       // paused: AI players don't take turns (they still answer auctions and offers)
+  realMoney: false,        // real-money payouts: each human declares a stake in the lobby (src/payout.js)
+  payoutMode: 'winner',    // 'winner' | 'order' | 'share' | 'share3' (share modes need maxRounds > 0)
 };
 const BOT_DELAY_MIN = 200;
 const BOT_DELAY_MAX = 15000;
@@ -113,6 +116,9 @@ class Game {
     this.lastRoll = null;
     this.lastCard = null;
     this.winner = null;
+    this.outCount = 0;     // bankruptcies so far (finishing order for payouts)
+    this.endReason = null; // 'lastStanding' | 'cap' | 'host'
+    this.payout = null;    // real-money settlement, set when the game ends
   }
 
   id(prefix) { return `${prefix}${this.nextId++}`; }
@@ -136,6 +142,7 @@ class Game {
       bot: !!opts.bot,
       cash: 0, pos: 0, inJail: false, jailTurns: 0, jailCards: [],
       loans: [], bankrupt: false, marginCall: false, connected: true,
+      stake: 0, // real-money stake in dollars (AI players always $0); locked when the game starts
     };
     this.players.push(p);
     this.addLog(`${p.name} ${p.bot ? '(AI) ' : ''}joined the room.`);
@@ -188,6 +195,40 @@ class Game {
     if (s.neutralRate !== undefined) this.settings.neutralRate = clamp(toNum(s.neutralRate), 0, 12);
     if (s.maxRounds !== undefined) this.settings.maxRounds = clamp(toInt(s.maxRounds || 0), 0, 500);
     if (s.seed !== undefined) this.settings.seed = s.seed === null || s.seed === '' ? null : clamp(toInt(s.seed, 'seed'), 0, 2 ** 31 - 1);
+    flag('realMoney');
+    pick('payoutMode', Payout.MODE_KEYS);
+    this.requirePayoutCap();
+  }
+
+  // Share payouts are settled at the round cap, so they need one: default it to 40 rounds.
+  requirePayoutCap() {
+    const st = this.settings;
+    if (st.realMoney && Payout.MODES[st.payoutMode].needsCap && !(st.maxRounds > 0)) st.maxRounds = Payout.DEFAULT_CAP;
+  }
+
+  // Each human declares their own stake in the lobby; it locks when the game starts.
+  setStake(pid, amount) {
+    const p = this.player(pid);
+    if (this.status !== 'lobby') fail('Stakes are locked once the game starts');
+    if (!this.settings.realMoney) fail('Real-money payouts are off');
+    if (p.bot) fail('AI players always stake $0');
+    const v = Payout.parseStake(amount);
+    if (v === null) fail(`Stake must be between $0 and $${Payout.MAX_STAKE.toLocaleString('en-US')}`);
+    p.stake = v;
+  }
+
+  // Rows for src/payout.js: stake, net worth (0 once bankrupt), and the order players went out.
+  payoutPlayers() {
+    return this.players.map((p) => ({ id: p.id, name: p.name, stake: p.stake, netWorth: p.bankrupt ? 0 : this.netWorth(p), bankrupt: p.bankrupt, out: p.out || 0 }));
+  }
+
+  settlePayout(reason) {
+    const r = Payout.settle({ mode: this.settings.payoutMode, players: this.payoutPlayers(), reason });
+    this.addLog(`💵 Real-money payout — ${r.label}. Pot ${Payout.dollars(r.pot)}.`, 'system');
+    for (const row of r.rows) {
+      this.addLog(`💵 ${Payout.placeLabel(row)} ${row.name}: stake ${Payout.dollars(row.stake)}, net worth ${row.netWorth < 0 ? '-' : ''}$${Math.abs(row.netWorth).toLocaleString('en-US')}, share ${(row.share * 100).toFixed(1)}% → payout ${Payout.dollars(row.payout)} (${Payout.signed(row.net)}).`, 'system');
+    }
+    return r;
   }
 
   // AI speed is a table setting, not a rule: the host can change it in the lobby or mid-game.
@@ -207,6 +248,8 @@ class Game {
     this.requireHost(pid);
     if (this.status !== 'lobby') fail('Already started');
     if (this.players.length < 2) fail('Need at least 2 players');
+    this.requirePayoutCap();
+    for (const p of this.players) if (p.bot || !this.settings.realMoney) p.stake = 0;
     if (this.settings.diceMode === 'seeded') {
       // Seat order = join order; every seat gets its own dice and card stream, so the same seed replayed
       // with players rotated through the seats gives everyone the same luck (a duplicate match).
@@ -244,6 +287,10 @@ class Game {
     this.addLog(`Game started! Turn order: ${this.players.map((p) => p.name).join(' → ')}.`, 'system');
     if (this.settings.diceMode === 'seeded') this.addLog(`Seeded dice: seed ${this.settings.seed}. Replay this seed with the seats rotated for a duplicate match.`, 'system');
     if (this.settings.maxRounds) this.addLog(`The game ends after round ${this.settings.maxRounds}; highest net worth wins.`, 'system');
+    if (this.settings.realMoney) {
+      const pot = this.players.reduce((a, p) => a + p.stake, 0);
+      this.addLog(`💵 Real-money payouts: ${Payout.MODES[this.settings.payoutMode].label}. Pot ${Payout.dollars(pot)} (${this.players.map((p) => `${p.name} ${Payout.dollars(p.stake)}`).join(', ')}). Stakes are locked.`, 'system');
+    }
     this.addLog(`Central bank policy rate opens at ${this.econ.policyRate.toFixed(2)}% per round.`, 'econ');
     if (this.settings.acquisition === 'draft') {
       this.draftQueue = shuffle(Object.keys(this.props).map(Number), this.rng);
@@ -885,7 +932,7 @@ class Game {
   newRound() {
     if (this.settings.maxRounds && this.round >= this.settings.maxRounds) {
       this.addLog(`⏱ Round ${this.round} was the last round — highest net worth wins.`, 'system');
-      this.finish(this.active().slice().sort((a, b) => this.netWorth(b) - this.netWorth(a))[0]);
+      this.finish(this.active().slice().sort((a, b) => this.netWorth(b) - this.netWorth(a))[0], 'cap');
       return;
     }
     this.closeRoundEconomy();
@@ -1360,13 +1407,14 @@ class Game {
     for (const c of p.jailCards) this.decks[c.deck].push(c.idx);
     p.jailCards = [];
     p.cash = 0; p.bankrupt = true; p.inJail = false;
+    p.out = ++this.outCount;
     if (this.auction) {
       this.auction.active = this.auction.active.filter((x) => x !== p.id);
       if (this.auction.bids) delete this.auction.bids[p.id];
       if (this.auction.highBidder === p.id) { this.auction.highBidder = null; this.auction.highBid = 0; }
     }
     const alive = this.active();
-    if (alive.length <= 1) { this.finish(alive[0] || null); return; }
+    if (alive.length <= 1) { this.finish(alive[0] || null, 'lastStanding'); return; }
     if (this.current().id === p.id && !(this.auction && this.auction.draft)) {
       if (this.auction && this.auction.kind === 'lot') this.auction = null;
       this.advanceTurn();
@@ -1374,18 +1422,20 @@ class Game {
     this.startQueuedSale();
   }
 
-  finish(winner) {
+  finish(winner, reason = 'host') {
     this.status = 'finished';
     this.auction = null;
     this.winner = winner ? winner.id : null;
+    this.endReason = reason;
     this.addLog(`🏆 Game over! ${winner ? winner.name : 'Nobody'} wins.`, 'system');
+    if (this.settings.realMoney) this.payout = this.settlePayout(reason);
   }
 
   endNow(pid) {
     this.requireHost(pid); this.requirePlaying();
     const best = this.active().slice().sort((a, b) => this.netWorth(b) - this.netWorth(a))[0];
     this.addLog('Host ended the game — highest net worth wins.', 'system');
-    this.finish(best);
+    this.finish(best, 'host');
   }
 
   // ---------------------------------------------------------------- dispatch
@@ -1397,6 +1447,7 @@ class Game {
     if (a === 'addBot') { if (this.status !== 'lobby') fail('Bots join in the lobby'); this.addBot(pid); return; }
     if (a === 'removeBot') { if (this.status !== 'lobby') fail('Bots leave in the lobby'); return this.removeBot(pid, msg.target); }
     if (a === 'botSpeed') return this.setBotSpeed(pid, msg);
+    if (a === 'stake') return this.setStake(pid, msg.amount);
     if (a === 'chat') { const text = String(msg.text || '').slice(0, 200).trim(); if (text) this.addLog(`${p.name}: ${text}`, 'chat'); return; }
     this.requirePlaying();
     if (a !== 'kick' && a !== 'endNow') this.requireAlive(p);
@@ -1459,7 +1510,7 @@ class Game {
   serialize() {
     const playing = this.status !== 'lobby';
     const players = this.players.map((p) => {
-      const base = { id: p.id, name: p.name, token: p.token, color: p.color, host: p.host, bot: p.bot, connected: p.connected, bankrupt: p.bankrupt };
+      const base = { id: p.id, name: p.name, token: p.token, color: p.color, host: p.host, bot: p.bot, connected: p.connected, bankrupt: p.bankrupt, stake: p.stake, out: p.out || 0 };
       if (!playing) return base;
       const lev = this.leverage(p);
       return {
@@ -1477,7 +1528,7 @@ class Game {
     });
     const view = {
       code: this.code, status: this.status, settings: this.settings, players, version: this.version,
-      log: this.log.slice(-150), winner: this.winner,
+      log: this.log.slice(-150), winner: this.winner, endReason: this.endReason, payout: this.payout,
     };
     if (!playing) return view;
     const spaceInfo = SPACES.map((s, i) => {
