@@ -120,7 +120,7 @@
 
   // ---------------------------------------------------------------- the script (frame index → cues)
   const CUES = {
-    0: () => { setSpeed(40); chapter('Rounds 1–9 · land grab'); cap('Each agent starts with <em>$1,500</em>. The central bank lends up to <em>3× leverage</em>.'); },
+    0: () => { setSpeed(40); chapter('Rounds 1–9 · land grab'); cap('Round 1. Each agent starts with <em>$1,500</em>. The bank lends up to <em>3× leverage</em>.'); },
     95: () => cap(null),
     132: () => chapter('Rounds 10–16 · building sets'),
     205: () => setSpeed(120),
@@ -137,9 +137,9 @@
     388: () => { stamp(tok('Hayek'), 'Margin call · round 26', 'Hayek is over the limit', 'Leverage 3.18× against a 3× cap', 'red'); vignette(true); return 1800; },
     389: () => { vignette(false); hlRate(false); cap(null); },
     418: () => { setSpeed(150); chapter('Round 28'); },
-    426: () => { zoom(34, 1.75); cap(`${tok('Minsky')} Minsky rolls a 7…`); return 1000; },
-    427: () => { stamp(tok('Minsky'), 'Rent due · round 28', 'Minsky pays <span class="num">$1,609</span>', `to ${tok('Keynes')} Keynes for Emerald Drive (4 houses)`, 'red'); cap('Keynes borrowed to build those houses. <em>It pays off… for now.</em>'); return 2600; },
-    428: () => { zoom(null); setSpeed(200); cap(`${tok('Minsky')} Minsky mortgages everything…`); },
+    426: () => { cap(`${tok('Minsky')} Minsky rolls a 7…`); return 1000; },
+    427: () => { stamp(tok('Minsky'), 'Rent due · round 28', 'Minsky pays <span class="num">$1,609</span>', `to ${tok('Keynes')} Keynes for Emerald Drive (4 houses)`, 'red'); cap('Back to that roll. Keynes borrowed to build those houses.'); return 2600; },
+    428: () => { setSpeed(200); cap(`${tok('Minsky')} Minsky mortgages everything…`); },
     434: () => { cap('…borrows at <span class="r">7.65%</span>. A textbook <em>Minsky moment</em>.'); return 2000; },
     435: () => { setSpeed(100); cap(null); },
     442: () => { cap(`${tok('Friedman')} Friedman lands on the greens too: <span class="r">−$1,207</span>.`); return 1300; },
@@ -171,16 +171,22 @@
 
   // ---------------------------------------------------------------- intro / outro
   const card = (html) => { const c = el('div', 'dCard', html); document.body.appendChild(c); return c; };
+  // Cold open: drop in at round 28 mid-crisis, show the worst roll, then rewind to round 1.
+  const COLD = 420;
   async function intro() {
-    const c1 = card(`<div><div class="kick fade">AI vs AI · a real game, sped up</div>
-      <h1 class="fade" style="animation-delay:.1s">5 AI agents play a property game<br>with <em>a central bank that lends.</em></h1>
-      <div class="rules3"><span style="animation-delay:.35s">🏦 Loans up to 3×</span><span style="animation-delay:.5s">📈 Floating rates</span><span style="animation-delay:.65s">⚠️ Margin calls</span><span style="animation-delay:.8s">🔨 Fire sales</span></div></div>`);
-    await sleep(3000);
-    c1.innerHTML = `<div><div class="kick fade">The players</div>
-      <div class="lineup">${P.map((p, k) => `<div class="pp" style="--pc:${p.color};animation-delay:${k * 0.09}s"><div class="t">${p.token}</div><div class="n">${p.name}</div><div class="a">AI AGENT</div></div>`).join('')}</div>
-      <h1 class="fade" style="font-size:52px;animation-delay:.5s">Who goes bust first?</h1></div>`;
-    await sleep(2500);
-    c1.classList.add('out'); await sleep(450); c1.remove();
+    chapter('Round 28'); spd.style.opacity = 0;
+    cap('<em>5 AI agents</em> are playing a property game where they can borrow from a central bank.');
+    for (let i = COLD; i <= 427; i++) { push(i); updatePanel(i); await sleep(i === 427 ? 1300 : i === 426 ? 900 : 260); if (i === 425) cap(`${tok('Minsky')} Minsky rolls…`); }
+    stamp(tok('Minsky'), 'Rent due · round 28', 'Minsky pays <span class="num">$1,609</span>', `to ${tok('Keynes')} Keynes for Emerald Drive (4 houses)`, 'red');
+    cap('…and loses <span class="r">$1,609</span> on one roll. How did it get this bad?');
+    await sleep(2600);
+    spd.textContent = '◀◀ REWIND'; spd.style.background = '#3a6ea5'; spd.style.opacity = 1; chapter('Rewinding');
+    cap(null); window.__fast = true; vignette(false);
+    for (let i = 427; i >= 0; i -= 3) { push(i); updatePanel(i); await sleep(8); }
+    for (const k of Object.keys(prevNw)) delete prevNw[k];
+    maxSoFar = 2500; push(0); updatePanel(0);
+    spd.style.background = ''; spd.style.opacity = 0;
+    await sleep(350);
   }
   async function outro() {
     cap(null); chapter(null); spd.style.opacity = 0;
@@ -203,7 +209,7 @@
   }
 
   // ---------------------------------------------------------------- run
-  push(0); updatePanel(0);
+  push(COLD); updatePanel(COLD);
   window.__dbg = { push, updatePanel, CUES, intro, outro, cap, stamp };
   window.__ready = true;
   window.__start = async () => {

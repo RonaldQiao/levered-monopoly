@@ -8,7 +8,7 @@ module.exports = (port) => new Promise((res) => {
     if (u === '/' || u === '/index.html') {
       let html = fs.readFileSync(`${REPO}/public/index.html`, 'utf8');
       html = html.replace('<script src="pricing.js"></script>', '<script src="/__fake.js"></script><script src="pricing.js"></script>')
-        .replace('</body>', '<link rel="stylesheet" href="/__overlay.css"><script src="/__director.js"></script></body>');
+        .replace('</body>', '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@500;600;700;800;900&display=swap"><link rel="stylesheet" href="/__overlay.css"><script src="/__director.js"></script></body>');
       r.writeHead(200, { 'Content-Type': 'text/html' }); return r.end(html);
     }
     if (u === '/pricing.js') f = `${REPO}/src/pricing.js`;
